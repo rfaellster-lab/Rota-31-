@@ -1,0 +1,6 @@
+{
+  "name": "Rota 31 Express",
+  "description": "Painel SaaS para gestão e aprovação de Conhecimentos de Transporte Eletrônicos (CT-e) da Rota 31 Express.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

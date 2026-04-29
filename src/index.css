@@ -1,0 +1,24 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  
+  --color-primary-50: #fff4ed;
+  --color-primary-100: #ffe6d5;
+  --color-primary-200: #feccab;
+  --color-primary-300: #fdaa7a;
+  --color-primary-400: #fb7c41;
+  --color-primary-500: #f26522; /* Rota 31 Express Orange */
+  --color-primary-600: #e24a13;
+  --color-primary-700: #bd3711;
+  --color-primary-800: #962c15;
+  --color-primary-900: #782714;
+  --color-primary-950: #411108;
+}
+
+@layer base {
+  body {
+    @apply bg-[#F3F4F6] text-slate-900 antialiased;
+  }
+}
