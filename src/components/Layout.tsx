@@ -1,10 +1,13 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Calendar as CalendarIcon, History as HistoryIcon, Settings, Bell, Menu, X, CheckSquare, AlertCircle } from 'lucide-react';
+import { LayoutDashboard, Calendar as CalendarIcon, History as HistoryIcon, Settings, Bell, Menu, X, CheckSquare, AlertCircle, LogOut } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useInvoices } from '../store/InvoiceContext';
+import { useAuth } from '../store/AuthContext';
 import { DateRangePicker } from './DateRangePicker';
+import { api, type AppNotification, type Promotion } from '../services/api';
+import PromoSlot from './PromoSlot';
 
 export function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
@@ -14,7 +17,13 @@ export default function Layout() {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const { globalDateRange, setGlobalDateRange, invoices } = useInvoices();
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const { globalDateRange, setGlobalDateRange, invoices, dryRun } = useInvoices();
+  const { user, signOut } = useAuth();
+  const userInitial = (user?.displayName || user?.email || 'U').charAt(0).toUpperCase();
+  const userLabel = user?.displayName || user?.email || 'Usuário';
+  const [appNotifications, setAppNotifications] = useState<AppNotification[]>([]);
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
 
   const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -25,14 +34,48 @@ export default function Layout() {
 
   const pendingCount = invoices.filter(i => i.status === 'pendente').length;
   const recentErrors = invoices.filter(i => i.status === 'erro').length;
+  const unreadAppCount = appNotifications.filter(n => !n.read).length;
+  const mobileAlertCount = Math.min(99, pendingCount + recentErrors + unreadAppCount);
+
+  const loadNotifications = async () => {
+    try {
+      const data = await api.getNotifications();
+      setAppNotifications(data.notifications || []);
+    } catch {
+      setAppNotifications([]);
+    }
+  };
+
+  useEffect(() => {
+    loadNotifications();
+    api.getPromotions('notifications')
+      .then(data => setPromotions(data.promotions || []))
+      .catch(() => setPromotions([]));
+  }, []);
+
+  useEffect(() => {
+    if (notificationsOpen) loadNotifications();
+  }, [notificationsOpen]);
+
+  const markRead = async (notification: AppNotification) => {
+    if (notification.read) return;
+    setAppNotifications(prev => prev.map(n => n.id === notification.id ? { ...n, read: true } : n));
+    try { await api.markNotificationRead(notification.id); } catch {}
+  };
 
   return (
     <div className="flex h-screen bg-[#F3F4F6] flex-col md:flex-row overflow-hidden font-sans text-slate-900">
+      {/* Banner DRY_RUN — proteção visual contra emissão acidental */}
+      {dryRun && (
+        <div className="absolute top-0 left-0 right-0 bg-red-600 text-white text-center py-1 text-[10px] font-bold uppercase tracking-widest z-[999999] border-b-2 border-red-800 shadow-md">
+          ⚠ Modo Simulação ativo — aprovar/negar não emite CT-e real
+        </div>
+      )}
       
       {/* Sidebar - Desktop */}
       <aside className="hidden md:flex flex-col w-20 bg-[#1F2937] items-center py-6 border-r border-slate-200 z-10 shrink-0">
-        <Link to="/" className="w-12 h-12 bg-[#F26522] rounded-xl flex items-center justify-center mb-10 shadow-lg shrink-0 hover:opacity-90 transition-opacity">
-          <span className="text-white font-black text-xl">31</span>
+        <Link to="/" className="w-14 h-14 bg-white rounded-xl flex items-center justify-center mb-10 shadow-lg shrink-0 hover:opacity-90 transition-opacity p-1.5">
+          <img src="/logo.png" alt="Rota 31" className="w-full h-full object-contain" />
         </Link>
         <nav className="flex flex-col gap-6 flex-1 w-full px-4 mt-2">
           {navigation.map((item) => {
@@ -57,16 +100,45 @@ export default function Layout() {
             title="Alertas"
           >
             <Bell className="w-6 h-6" />
-            {pendingCount > 0 && (
+            {(pendingCount > 0 || recentErrors > 0 || unreadAppCount > 0) && (
               <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border border-[#1F2937]"></span>
             )}
           </button>
         </nav>
         
-        <div className="mt-6 shrink-0">
-          <div className="w-10 h-10 rounded-full bg-slate-600 border-2 border-slate-300 flex items-center justify-center text-xs font-bold text-white shadow-sm">
-            T
-          </div>
+        {/* Banner Thor4Tech (rotativo) */}
+        <div className="mt-4 px-2 w-full shrink-0">
+          <PromoSlot placement="sidebar" variant="sidebar" />
+        </div>
+
+        <div className="mt-4 shrink-0 relative">
+          <button
+            onClick={() => setProfileMenuOpen(o => !o)}
+            className="w-10 h-10 rounded-full bg-slate-600 border-2 border-slate-300 flex items-center justify-center text-xs font-bold text-white shadow-sm hover:bg-slate-500 transition-colors"
+            title={userLabel}
+          >
+            {userInitial}
+          </button>
+          {profileMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setProfileMenuOpen(false)} />
+              <div className="absolute left-full bottom-0 ml-2 bg-white rounded-xl shadow-2xl border border-slate-200 w-64 z-50 overflow-hidden">
+                <div className="p-3 border-b border-slate-100">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Conectado como</p>
+                  <p className="text-sm font-semibold text-slate-900 truncate mt-0.5">{userLabel}</p>
+                  {user?.email && user?.email !== userLabel && (
+                    <p className="text-xs text-slate-500 truncate">{user.email}</p>
+                  )}
+                </div>
+                <button
+                  onClick={async () => { await signOut(); setProfileMenuOpen(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  <LogOut className="w-4 h-4" /> Sair
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </aside>
 
@@ -75,9 +147,7 @@ export default function Layout() {
         <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-4 sm:px-8 z-[99999] relative shrink-0 shadow-sm isolate">
            <div className="flex items-center gap-4">
               <div className="flex items-center md:hidden">
-                <div className="w-8 h-8 bg-[#F26522] rounded-lg mr-3 flex items-center justify-center">
-                  <span className="text-white text-sm font-bold">31</span>
-                </div>
+                <img src="/logo.png" alt="Rota 31" className="w-9 h-9 mr-2 object-contain" />
               </div>
               <h1 className="text-xl font-bold text-[#1F2937]">Rota 31 Express</h1>
               <div className="hidden sm:flex items-center gap-2 bg-green-50 px-3 py-1 rounded-full">
@@ -94,9 +164,13 @@ export default function Layout() {
               <div className="flex items-center gap-2">
                  <span className="bg-orange-100 text-[#F26522] px-2 py-0.5 rounded text-[10px] font-bold uppercase hidden sm:inline-block">Beta v2.4</span>
               </div>
-              <div className="md:hidden h-8 w-8 rounded-full bg-slate-600 border-2 border-white shadow-sm flex items-center justify-center text-white font-bold text-xs">
-                 T
-              </div>
+              <button
+                onClick={async () => { if (confirm('Deseja sair?')) await signOut(); }}
+                className="md:hidden h-8 w-8 rounded-full bg-slate-600 border-2 border-white shadow-sm flex items-center justify-center text-white font-bold text-xs hover:bg-slate-500 transition-colors"
+                title={`${userLabel} (toque para sair)`}
+              >
+                 {userInitial}
+              </button>
            </div>
         </header>
 
@@ -128,9 +202,9 @@ export default function Layout() {
            <button onClick={() => setNotificationsOpen(true)} className="flex flex-col items-center p-2 rounded-xl min-w-[60px] text-slate-400 relative hover:text-slate-600 transition-colors">
               <Bell className="w-6 h-6 mb-1 text-slate-400" />
               <span className="text-[10px] font-bold leading-none">Alertas</span>
-              {pendingCount > 0 && (
+              {mobileAlertCount > 0 && (
                 <span className="absolute top-1 right-3 bg-red-500 text-white w-4 h-4 flex items-center justify-center rounded-full text-[9px] font-black border border-white">
-                  {pendingCount}
+                  {mobileAlertCount}
                 </span>
               )}
            </button>
@@ -159,6 +233,30 @@ export default function Layout() {
                     </div>
                     
                     <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 space-y-4">
+                      {appNotifications.map(notification => (
+                        <button
+                          key={notification.id}
+                          type="button"
+                          onClick={() => markRead(notification)}
+                          className={cn(
+                            "w-full text-left border rounded-xl p-4 flex gap-3 transition-colors",
+                            notification.read ? "bg-white border-slate-100" : "bg-blue-50 border-blue-100"
+                          )}
+                        >
+                          <Bell className={cn(
+                            "w-5 h-5 shrink-0 mt-0.5",
+                            notification.level === 'error' ? "text-red-600" :
+                            notification.level === 'warning' ? "text-amber-600" :
+                            notification.level === 'success' ? "text-emerald-600" : "text-blue-600"
+                          )} />
+                          <div>
+                            <h3 className="text-sm font-bold text-slate-900">{notification.title}</h3>
+                            <p className="text-sm text-slate-600 mt-1">{notification.message}</p>
+                            <p className="text-xs text-slate-400 mt-2 font-medium">{notification.source}</p>
+                          </div>
+                        </button>
+                      ))}
+
                       {recentErrors > 0 && (
                          <div className="bg-red-50 border border-red-100 rounded-xl p-4 flex gap-3">
                             <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
@@ -180,11 +278,31 @@ export default function Layout() {
                          </div>
                       )}
                       
-                      {pendingCount === 0 && recentErrors === 0 && (
+                      {pendingCount === 0 && recentErrors === 0 && appNotifications.length === 0 && (
                          <div className="text-center py-10 flex flex-col items-center justify-center h-full">
                             <Bell className="w-12 h-12 text-slate-200 mb-3" />
                             <p className="text-slate-500 font-medium">Você não tem notificações novas.</p>
                          </div>
+                      )}
+
+                      {promotions[0] && (
+                        <div className="mt-6 border-t border-slate-100 pt-4">
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Thor4Tech</p>
+                            <h3 className="text-sm font-bold text-slate-800 mt-1">{promotions[0].title}</h3>
+                            <p className="text-xs text-slate-500 mt-1 leading-relaxed">{promotions[0].body}</p>
+                            {promotions[0].ctaUrl && (
+                              <a
+                                href={promotions[0].ctaUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex mt-2 text-xs font-bold text-[#F26522] hover:underline"
+                              >
+                                {promotions[0].ctaLabel || 'Saiba mais'}
+                              </a>
+                            )}
+                          </div>
+                        </div>
                       )}
                     </div>
                  </div>

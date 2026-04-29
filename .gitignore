@@ -6,3 +6,12 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Build artifacts adicionais
+dist/
+functions/dist/
+functions/node_modules/
+
+# Firebase local emulator
+.firebase/
+firebase-debug.log

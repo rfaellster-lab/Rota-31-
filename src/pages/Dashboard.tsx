@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useInvoices } from "../store/InvoiceContext";
+import { useAuth } from "../store/AuthContext";
 import { Invoice } from "../types";
 import { cn } from "../components/Layout";
 import {
@@ -40,6 +41,8 @@ export default function Dashboard() {
     addNoteToInvoice,
     snoozeInvoice,
   } = useInvoices();
+  const { user } = useAuth();
+  const userLabel = user?.displayName || user?.email || "Usuário";
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("todos");
   const [pagadorFilter, setPagadorFilter] = useState<string>("todos");
@@ -151,13 +154,13 @@ export default function Dashboard() {
   };
 
   const handleBulkApprove = () => {
-    bulkApproveInvoices(Array.from(selectedIds), "Talita");
+    bulkApproveInvoices(Array.from(selectedIds), userLabel);
     setSelectedIds(new Set());
   };
 
   const handleApprove = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    approveInvoice(id, "Talita");
+    approveInvoice(id, userLabel);
   };
 
   const handleDenyClick = (id: string, e: React.MouseEvent) => {
@@ -875,7 +878,7 @@ export default function Dashboard() {
                                         addNoteToInvoice(
                                           selectedInvoice.id,
                                           `Valor do frete alterado manualmente para R$ ${val.toFixed(2)}`,
-                                          "Talita",
+                                          userLabel,
                                         );
                                       }
                                       setIsEditingFrete(false);
@@ -1038,7 +1041,7 @@ export default function Dashboard() {
                               addNoteToInvoice(
                                 selectedInvoice.id,
                                 newNote,
-                                "Talita",
+                                userLabel,
                               );
                               setNewNote("");
                               // Also update local selectedInvoice state to see re-render instantly without closing modal
@@ -1050,7 +1053,7 @@ export default function Dashboard() {
                                     id: Math.random().toString(),
                                     text: newNote,
                                     date: new Date().toISOString(),
-                                    user: "Talita",
+                                    user: userLabel,
                                   },
                                 ],
                               });
