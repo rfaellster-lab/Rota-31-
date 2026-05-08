@@ -46,7 +46,7 @@ jobs:
         run: |
           # Health check no endpoint deployado
           for i in {1..6}; do
-            if curl -sSf -o /dev/null https://api-ajc3rclwsa-rj.a.run.app/health; then
+            if curl -sSf -o /dev/null https://api-ajc3rclwsa-rj.a.run.app/api/health; then
               echo "✅ Backend respondendo"
               exit 0
             fi
