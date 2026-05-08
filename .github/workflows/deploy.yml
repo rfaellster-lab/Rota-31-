@@ -50,14 +50,14 @@ jobs:
       - name: Deploy to FTP (Hostgator)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER }}
+          server: ftp.thor4tech.com.br
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           server-dir: public_html/rota31/
           local-dir: ./dist/
           dangerous-clean-slate: false
           security: loose
-          protocol: ftp
+          protocol: ftps
           port: 21
           log-level: standard
 
