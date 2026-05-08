@@ -1,0 +1,84 @@
+name: Preview Build (PR)
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run typecheck
+        id: typecheck
+        run: npm run lint
+        continue-on-error: false
+
+      - name: Build
+        id: build
+        run: npm run build
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_API_KEY: ${{ secrets.VITE_API_KEY }}
+
+      - name: Bundle size analysis
+        id: bundle
+        run: |
+          BUNDLE_SIZE=$(du -sh dist/ | cut -f1)
+          JS_SIZE=$(du -sh dist/assets/*.js 2>/dev/null | tail -1 | cut -f1)
+          CSS_SIZE=$(du -sh dist/assets/*.css 2>/dev/null | tail -1 | cut -f1)
+          echo "bundle_size=$BUNDLE_SIZE" >> $GITHUB_OUTPUT
+          echo "js_size=$JS_SIZE" >> $GITHUB_OUTPUT
+          echo "css_size=$CSS_SIZE" >> $GITHUB_OUTPUT
+
+      - name: Comment PR with build status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const bundleSize = '${{ steps.bundle.outputs.bundle_size }}';
+            const jsSize = '${{ steps.bundle.outputs.js_size }}';
+            const cssSize = '${{ steps.bundle.outputs.css_size }}';
+
+            const body = `## ✅ Build OK
+
+            | Item | Tamanho |
+            |---|---|
+            | Total dist/ | ${bundleSize} |
+            | JS bundle | ${jsSize} |
+            | CSS bundle | ${cssSize} |
+
+            **Status:** Pronto para review e merge.
+
+            Após merge em \`main\`, deploy automático para https://thor4tech.com.br/rota31/`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Bundle size guard
+        run: |
+          MAX_KB=1300
+          ACTUAL_KB=$(du -sk dist/assets/*.js 2>/dev/null | tail -1 | cut -f1)
+          if [ "$ACTUAL_KB" -gt "$MAX_KB" ]; then
+            echo "⚠️ Bundle JS ($ACTUAL_KB KB) acima do limite ($MAX_KB KB)"
+            echo "Considere code-splitting ou remover dependências"
+          else
+            echo "✅ Bundle dentro do limite ($ACTUAL_KB KB / $MAX_KB KB)"
+          fi

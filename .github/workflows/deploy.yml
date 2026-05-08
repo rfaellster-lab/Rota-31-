@@ -1,0 +1,70 @@
+name: Deploy Frontend Rota 31
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'functions/**'
+      - 'docs/**'
+      - '*.md'
+      - '.gitignore'
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run typecheck
+        run: npm run lint
+        continue-on-error: false
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_API_KEY: ${{ secrets.VITE_API_KEY }}
+
+      - name: Verify dist exists
+        run: |
+          if [ ! -d "dist" ]; then
+            echo "❌ dist/ não foi gerado"
+            exit 1
+          fi
+          echo "✅ Build OK. Conteúdo de dist/:"
+          ls -la dist/
+
+      - name: Deploy to FTP (Hostgator)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: public_html/rota31/
+          local-dir: ./dist/
+          dangerous-clean-slate: false
+          security: loose
+          protocol: ftp
+          port: 21
+          log-level: standard
+
+      - name: Deploy summary
+        if: success()
+        run: |
+          echo "✅ Deploy concluído com sucesso"
+          echo "🌐 URL: https://thor4tech.com.br/rota31/"
+          echo "📦 Bundle: $(du -sh dist/ | cut -f1)"
+          echo "🕐 Timestamp: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
