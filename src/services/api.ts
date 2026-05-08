@@ -79,6 +79,9 @@ export interface Promotion {
 export const api = {
   health: () => request<any>('GET', '/health'),
 
+  // Sprint 1 / A4
+  getFeatureFlags: () => request<{ flags: Record<string, boolean>; ts: number }>('GET', '/feature-flags'),
+
   getInvoices: () => request<InvoicesResponse>('GET', '/invoices'),
   getInvoice: (chave: string) => request<Invoice>('GET', `/invoices/${encodeURIComponent(chave)}`),
 

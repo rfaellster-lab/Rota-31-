@@ -5,9 +5,12 @@ import { formatMoney } from '../utils/formatters';
 import { parseISO, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
 import { cn } from '../components/Layout';
 import { Invoice } from '../types';
+import { useToast } from '../stores/useToastStore';
+import { EmptyState, EmptyStatePresets } from '../components/molecules/EmptyState';
 
 export default function History() {
   const { invoices, globalDateRange, updateInvoice, cancelInvoice } = useInvoices();
+  const toast = useToast();
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [cancelMotivo, setCancelMotivo] = useState('');
@@ -80,7 +83,9 @@ export default function History() {
   };
 
   const handleDownloadZip = () => {
-    alert(`Mock: Baixando ZIP contendo XMLs/PDFs de ${selectedIds.size} notas selecionadas...`);
+    toast.info(`Baixando ZIP com ${selectedIds.size} ${selectedIds.size === 1 ? 'nota' : 'notas'}...`, {
+      title: 'Em breve',
+    });
     setSelectedIds(new Set());
   };
 
@@ -170,9 +175,9 @@ export default function History() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto min-h-[400px]">
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-340px)] min-h-[400px]">
           <table className="w-full text-left text-sm text-gray-600 whitespace-nowrap">
-            <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-200">
+            <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
               <tr>
                 <th className="px-4 py-3 font-medium w-10">
                    <input type="checkbox" className="rounded border-slate-300 text-[#F26522] focus:ring-[#F26522]"
@@ -243,8 +248,12 @@ export default function History() {
                ))}
                {filtered.length === 0 && (
                  <tr>
-                   <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
-                     Nenhuma nota encontrada.
+                   <td colSpan={7} className="p-0">
+                     {searchTerm.trim() ? (
+                       <EmptyState {...EmptyStatePresets.noSearchResults(searchTerm)} />
+                     ) : (
+                       <EmptyState {...EmptyStatePresets.noHistory()} />
+                     )}
                    </td>
                  </tr>
                )}
@@ -434,7 +443,7 @@ export default function History() {
                 <button
                   onClick={async () => {
                     if (cancelMotivo.trim().length < 3) {
-                      alert('Informe o motivo (mínimo 3 caracteres)');
+                      toast.warn('Informe o motivo (mínimo 3 caracteres)');
                       return;
                     }
                     await cancelInvoice(selectedInvoice.id, cancelMotivo.trim());

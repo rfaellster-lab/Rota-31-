@@ -8,6 +8,7 @@ import { useAuth } from '../store/AuthContext';
 import { DateRangePicker } from './DateRangePicker';
 import { api, type AppNotification, type Promotion } from '../services/api';
 import PromoSlot from './PromoSlot';
+import { FreshnessIndicator } from './molecules/FreshnessIndicator';
 
 export function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
@@ -18,7 +19,7 @@ export default function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const { globalDateRange, setGlobalDateRange, invoices, dryRun } = useInvoices();
+  const { globalDateRange, setGlobalDateRange, invoices, dryRun, lastUpdated, refreshing, refresh } = useInvoices();
   const { user, signOut } = useAuth();
   const userInitial = (user?.displayName || user?.email || 'U').charAt(0).toUpperCase();
   const userLabel = user?.displayName || user?.email || 'Usuário';
@@ -185,6 +186,13 @@ export default function Layout() {
               <div className="hidden sm:flex items-center gap-2 bg-green-50 px-3 py-1 rounded-full">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                 <span className="text-[10px] uppercase tracking-wider font-bold text-green-700">Sistema Online</span>
+              </div>
+              <div className="hidden lg:block">
+                <FreshnessIndicator
+                  lastUpdated={lastUpdated}
+                  refreshing={refreshing}
+                  onRefresh={() => { void refresh(); }}
+                />
               </div>
            </div>
            

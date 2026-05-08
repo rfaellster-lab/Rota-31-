@@ -34,6 +34,8 @@ import {
 import { ptBR } from "date-fns/locale";
 import { DateRangePicker } from "../components/DateRangePicker";
 import { DashboardCharts } from "../components/DashboardCharts";
+import { useToast } from "../stores/useToastStore";
+import { EmptyState, EmptyStatePresets } from "../components/molecules/EmptyState";
 
 /**
  * Converte código de motivo de alerta em label legível para o usuário.
@@ -74,6 +76,7 @@ export default function Dashboard() {
     snoozeInvoice,
   } = useInvoices();
   const { user } = useAuth();
+  const toast = useToast();
   const userLabel = user?.displayName || user?.email || "Usuário";
   const [searchTerm, setSearchTerm] = useState("");
   // Default = pendentes (foco do Dashboard é decidir, histórico fica em /historico)
@@ -390,11 +393,17 @@ export default function Dashboard() {
             <tbody className="text-sm">
               {filtered.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={9}
-                    className="px-6 py-12 text-center text-gray-500"
-                  >
-                    Nenhuma nota encontrada com os filtros atuais.
+                  <td colSpan={9} className="p-0">
+                    {searchTerm.trim() ? (
+                      <EmptyState {...EmptyStatePresets.noSearchResults(searchTerm)} />
+                    ) : statusFilter === 'pendente' ? (
+                      <EmptyState {...EmptyStatePresets.noPendingApprovals()} />
+                    ) : (
+                      <EmptyState
+                        title="Nada nesse filtro"
+                        description="Ajuste o status, o período ou a busca pra ver outras notas."
+                      />
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -894,9 +903,7 @@ export default function Dashboard() {
                                 <button
                                   onClick={() => {
                                     if (valorMudou && !motivoFinal) {
-                                      window.alert(
-                                        "Selecione o motivo da edição antes de aprovar.",
-                                      );
+                                      toast.warn("Selecione o motivo da edição antes de aprovar.");
                                       return;
                                     }
                                     approveInvoice(

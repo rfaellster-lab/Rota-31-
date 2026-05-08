@@ -8,10 +8,20 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { Invoice } from '../types';
 import { DateRange } from '../components/DateRangePicker';
 import { api } from '../services/api';
+import { useToastStore } from '../stores/useToastStore';
+
+// Helper: dispara toast fora de componente (Context Provider)
+const toast = {
+  error: (message: string) => useToastStore.getState().push({ level: 'error', message, durationMs: 6000 }),
+  warn: (message: string) => useToastStore.getState().push({ level: 'warn', message, durationMs: 5000 }),
+  success: (message: string) => useToastStore.getState().push({ level: 'success', message, durationMs: 4000 }),
+};
 
 interface InvoiceContextType {
   invoices: Invoice[];
   loading: boolean;
+  refreshing: boolean;
+  lastUpdated: number | null;
   error: string | null;
   refresh: () => Promise<void>;
   approveInvoice: (
@@ -39,6 +49,8 @@ const REFRESH_INTERVAL_MS = 60_000; // refetch a cada 1 minuto
 export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dryRun, setDryRun] = useState(false);
 
@@ -68,13 +80,16 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
   const refresh = async () => {
     try {
       setError(null);
+      setRefreshing(true);
       const data = await api.getInvoices();
       setInvoices(data.invoices);
+      setLastUpdated(Date.now());
     } catch (e: any) {
       console.error('Erro ao buscar invoices:', e);
       setError(e.message || 'Erro ao carregar dados');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -112,7 +127,7 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
     } catch (e: any) {
       console.error('Erro approve:', e);
       setInvoices(prev);
-      alert(`Erro ao aprovar: ${e.message}`);
+      toast.error(`Erro ao aprovar: ${e.message}`);
     }
   };
 
@@ -127,7 +142,7 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
     } catch (e: any) {
       console.error('Erro deny:', e);
       setInvoices(prev);
-      alert(`Erro ao negar: ${e.message}`);
+      toast.error(`Erro ao negar: ${e.message}`);
     }
   };
 
@@ -135,7 +150,7 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
     const inv = invoices.find(i => i.id === id);
     if (!inv) return;
     if (!motivo || motivo.trim().length < 3) {
-      alert('Informe o motivo do cancelamento (mínimo 3 caracteres)');
+      toast.warn('Informe o motivo do cancelamento (mínimo 3 caracteres)');
       return;
     }
     const prev = invoices;
@@ -146,7 +161,7 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
     } catch (e: any) {
       console.error('Erro cancel:', e);
       setInvoices(prev);
-      alert(`Erro ao cancelar: ${e.message}`);
+      toast.error(`Erro ao cancelar: ${e.message}`);
     }
   };
 
@@ -179,7 +194,7 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
       await api.addInvoiceNote(inv.chaveAcesso, noteText);
     } catch (e: any) {
       console.error('Erro salvar nota:', e);
-      alert('Erro ao salvar nota: ' + e.message);
+      toast.error('Erro ao salvar nota: ' + e.message);
     }
   };
 
@@ -203,7 +218,7 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
       await api.setInvoiceSnooze(inv.chaveAcesso, date);
     } catch (e: any) {
       console.error('Erro snooze:', e);
-      alert('Erro ao adiar: ' + e.message);
+      toast.error('Erro ao adiar: ' + e.message);
     }
   };
 
@@ -213,7 +228,7 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <InvoiceContext.Provider value={{
-      invoices, loading, error, refresh, dryRun,
+      invoices, loading, refreshing, lastUpdated, error, refresh, dryRun,
       approveInvoice, denyInvoice, cancelInvoice, emitInvoice, bulkApproveInvoices,
       addNoteToInvoice, snoozeInvoice, loadInvoiceNotes, updateInvoice,
       globalDateRange, setGlobalDateRange,

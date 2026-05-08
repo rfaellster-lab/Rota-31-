@@ -9,6 +9,7 @@ import { Webhook, MessageSquare, ShieldAlert, RefreshCw, Plus, Trash2, Activity,
 import { api } from '../services/api';
 import { useAuth } from '../store/AuthContext';
 import PromoSlot from '../components/PromoSlot';
+import { useToast } from '../stores/useToastStore';
 
 interface Rule { row: number; tipoBusca: string; valorBusca: string; nomeCliente: string; valorMinimo: string; porcentagem: string; observacoes: string; }
 interface HealthStatus { n8n?: any; sheets?: any; bsoft?: any; firestore?: any; dryRun?: boolean; }
@@ -21,6 +22,7 @@ type Tab = 'operacional' | 'desenvolvedor' | 'usuarios';
 
 export default function Config() {
   const { isAdmin } = useAuth();
+  const toast = useToast();
   const [tab, setTab] = useState<Tab>('operacional');
 
   const [rules, setRules] = useState<Rule[]>([]);
@@ -55,13 +57,14 @@ export default function Config() {
       await api.addRule(newRule);
       setNewRule({ tipoBusca: 'CNPJ', valorBusca: '', nomeCliente: '', porcentagem: '', valorMinimo: '' });
       await loadRules();
-    } catch (e: any) { alert(`Erro: ${e.message}`); }
+      toast.success('Regra criada');
+    } catch (e: any) { toast.error(`Erro ao criar regra: ${e.message}`); }
   };
 
   const handleRemoveRule = async (row: number) => {
     if (!confirm('Remover esta regra?')) return;
-    try { await api.deleteRule(row); await loadRules(); }
-    catch (e: any) { alert(`Erro: ${e.message}`); }
+    try { await api.deleteRule(row); await loadRules(); toast.success('Regra removida'); }
+    catch (e: any) { toast.error(`Erro ao remover: ${e.message}`); }
   };
 
   const updateUserRole = async (uid: string, role: string) => {
@@ -70,7 +73,7 @@ export default function Config() {
       headers: { 'Content-Type': 'application/json', 'x-api-key': (import.meta as any).env.VITE_API_KEY, 'Authorization': `Bearer ${await (await import('../lib/firebase')).auth.currentUser?.getIdToken()}` },
       body: JSON.stringify({ role }),
     });
-    if (r.ok) loadUsers(); else alert('Falha ao alterar permissão');
+    if (r.ok) { loadUsers(); toast.success('Permissão atualizada'); } else toast.error('Falha ao alterar permissão');
   };
 
   const toggleUserDisabled = async (uid: string, disabled: boolean) => {
@@ -167,7 +170,15 @@ export default function Config() {
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
                   {loadingRules ? (
-                    <tr><td colSpan={6} className="p-6 text-center text-gray-400">Carregando…</td></tr>
+                    <>
+                      {Array.from({ length: 4 }).map((_, i) => (
+                        <tr key={`sk-${i}`}>
+                          {Array.from({ length: 6 }).map((__, j) => (
+                            <td key={j} className="px-4 py-3"><div className="h-4 rounded-md bg-slate-200/70 animate-pulse motion-reduce:animate-none" /></td>
+                          ))}
+                        </tr>
+                      ))}
+                    </>
                   ) : rules.length === 0 ? (
                     <tr><td colSpan={6} className="p-6 text-center text-gray-400">Nenhuma regra cadastrada.</td></tr>
                   ) : rules.map(rule => (
@@ -245,7 +256,7 @@ export default function Config() {
           <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center"><Users className="w-5 h-5 mr-2 text-indigo-500" /> Usuários cadastrados ({users.length})</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[700px]">
-              <thead className="text-[10px] text-gray-500 uppercase font-bold tracking-wider bg-gray-50">
+              <thead className="text-[10px] text-gray-500 uppercase font-bold tracking-wider bg-gray-50 sticky top-0 z-10">
                 <tr><th className="px-3 py-2 text-left">Nome</th><th className="px-3 py-2 text-left">Email</th><th className="px-3 py-2 text-left">Permissão</th><th className="px-3 py-2 text-left">Status</th><th className="px-3 py-2"></th></tr>
               </thead>
               <tbody className="divide-y">

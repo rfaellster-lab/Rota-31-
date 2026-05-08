@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import Layout from './components/Layout';
@@ -15,9 +15,29 @@ import Relatorios from './pages/Relatorios';
 import Login from './pages/Login';
 import { InvoiceProvider } from './store/InvoiceContext';
 import { AuthProvider, useAuth } from './store/AuthContext';
+import { ToastContainer } from './components/organisms/ToastContainer';
+import { useFeatureFlags } from './stores/useFeatureFlags';
+import { api } from './services/api';
 
 function AuthGate({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
+  const setFlags = useFeatureFlags((s) => s.setFlags);
+
+  // Carrega feature flags 1x após login (Sprint 1 / A4)
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    api.getFeatureFlags()
+      .then((res) => {
+        if (cancelled) return;
+        setFlags(res.flags as any);
+      })
+      .catch((e) => {
+        console.warn('[FeatureFlags] erro ao carregar — usando defaults:', e);
+      });
+    return () => { cancelled = true; };
+  }, [user, setFlags]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -48,6 +68,7 @@ export default function App() {
               </Route>
             </Routes>
           </BrowserRouter>
+          <ToastContainer />
         </InvoiceProvider>
       </AuthGate>
     </AuthProvider>

@@ -30,5 +30,21 @@ export default defineConfig(({mode}) => {
       },
       hmr: process.env.DISABLE_HMR !== 'true',
     },
+    build: {
+      // Sprint 1 — code splitting estratégico (master-plan/01-architecture-plan.md §4)
+      // Cap atual: 1.2 MB. Aviso a partir de 1300 KB (CI checa).
+      chunkSizeWarningLimit: 1300,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+            'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+            'vendor-charts': ['recharts'],
+            'vendor-motion': ['motion'],
+            'vendor-icons': ['lucide-react'],
+          },
+        },
+      },
+    },
   };
 });

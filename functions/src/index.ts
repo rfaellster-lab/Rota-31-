@@ -106,6 +106,49 @@ function requireAdmin(req: AuthedRequest, res: Response, next: NextFunction) {
   next();
 }
 
+/**
+ * Middleware: requireFeatureFlag('XP_ENABLED')
+ * Bloqueia request se a flag estiver desabilitada pro usuário.
+ * Usa cache 60s in-memory para reduzir reads no Firestore.
+ * @story Sprint 1 / A4
+ */
+const flagCache = new Map<string, { flags: Record<string, boolean>; ts: number }>();
+const FLAG_CACHE_TTL_MS = 60_000;
+
+function requireFeatureFlag(flagName: string) {
+  return async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    if (!firebaseAdminEnabled) return next(); // dev/test sem firebase: deixa passar
+    const uid = req.authUser?.uid || 'anon';
+    const cacheKey = `${uid}:${flagName}`;
+    const cached = flagCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < FLAG_CACHE_TTL_MS) {
+      if (cached.flags[flagName]) return next();
+      return res.status(403).json({ error: `Feature ${flagName} desabilitada pra este usuário` });
+    }
+    try {
+      const globalDoc = await admin.firestore().doc('config/featureFlags').get();
+      const userDoc = uid !== 'anon'
+        ? await admin.firestore().doc(`userProfiles/${uid}`).get()
+        : null;
+      const panicMode = globalDoc.exists && globalDoc.data()?.panicMode === true;
+      const merged: Record<string, boolean> = panicMode
+        ? {}
+        : {
+            ...(globalDoc.exists ? globalDoc.data()?.global || {} : {}),
+            ...(userDoc?.exists ? userDoc.data()?.featureFlags || {} : {}),
+          };
+      flagCache.set(cacheKey, { flags: merged, ts: Date.now() });
+      if (merged[flagName]) return next();
+      return res.status(403).json({ error: `Feature ${flagName} desabilitada pra este usuário` });
+    } catch (e) {
+      console.warn('[requireFeatureFlag] erro:', e);
+      return res.status(503).json({ error: 'Verificação de feature flag indisponível' });
+    }
+  };
+}
+// suprimir warn de import não-usado quando middleware ainda não tem consumidor
+void requireFeatureFlag;
+
 function auditActor(req: AuthedRequest) {
   return req.authUser
     ? { uid: req.authUser.uid, email: req.authUser.email, name: req.authUser.name, role: req.authUser.role }
@@ -267,6 +310,51 @@ app.patch('/api/users/:uid/disable', verifyFirebaseToken as any, requireAdmin as
     metadata: { disabled },
   });
   res.json({ ok: true, uid: req.params.uid, disabled });
+}));
+
+/** GET /api/feature-flags — flags do usuário logado (Sprint 1 / A4)
+ *  Lê de userProfiles/{uid}.featureFlags, faz merge com global/default.
+ *  Cliente cacheia 5min (useFeatureFlags Zustand store).
+ */
+const DEFAULT_FLAGS = {
+  XP_ENABLED: false,
+  INSIGHTS_ENABLED: false,
+  EXECUTIVE_DASHBOARD_ENABLED: false,
+  STORE_ENABLED: false,
+  ONBOARDING_TOUR_ENABLED: false,
+};
+
+app.get('/api/feature-flags', wrap(async (req: AuthedRequest, res) => {
+  const uid = req.authUser?.uid;
+  let flags = { ...DEFAULT_FLAGS };
+
+  if (firebaseAdminEnabled) {
+    try {
+      // 1) Global override
+      const globalDoc = await admin.firestore().doc('config/featureFlags').get();
+      if (globalDoc.exists) {
+        const data = globalDoc.data() || {};
+        if (data.global) flags = { ...flags, ...data.global };
+        // Killswitch: se panicMode, força tudo false
+        if (data.panicMode === true) {
+          flags = { ...DEFAULT_FLAGS };
+        }
+      }
+
+      // 2) Per-user override (não pode bypassar panicMode)
+      if (uid && !(globalDoc.exists && globalDoc.data()?.panicMode)) {
+        const userDoc = await admin.firestore().doc(`userProfiles/${uid}`).get();
+        if (userDoc.exists) {
+          const userFlags = userDoc.data()?.featureFlags;
+          if (userFlags) flags = { ...flags, ...userFlags };
+        }
+      }
+    } catch (e) {
+      console.warn('[feature-flags] erro ao ler Firestore, usando defaults:', e);
+    }
+  }
+
+  res.json({ flags, ts: Date.now() });
 }));
 
 /** GET /api/health — status das integrações */
