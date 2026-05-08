@@ -11,6 +11,7 @@ import Dashboard from './pages/Dashboard';
 import CalendarView from './pages/CalendarView';
 import History from './pages/History';
 import Config from './pages/Config';
+import Relatorios from './pages/Relatorios';
 import Login from './pages/Login';
 import { InvoiceProvider } from './store/InvoiceContext';
 import { AuthProvider, useAuth } from './store/AuthContext';
@@ -36,11 +37,12 @@ export default function App() {
     <AuthProvider>
       <AuthGate>
         <InvoiceProvider>
-          <BrowserRouter>
+          <BrowserRouter basename={import.meta.env.BASE_URL}>
             <Routes>
               <Route path="/" element={<Layout />}>
                 <Route index element={<Dashboard />} />
                 <Route path="calendario" element={<CalendarView />} />
+                <Route path="relatorios" element={<Relatorios />} />
                 <Route path="historico" element={<History />} />
                 <Route path="configuracao" element={<Config />} />
               </Route>

@@ -14,12 +14,18 @@ interface InvoiceContextType {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  approveInvoice: (id: string, user: string) => Promise<void>;
+  approveInvoice: (
+    id: string,
+    user: string,
+    opts?: { valorFreteOverride?: number; motivoOverride?: string }
+  ) => Promise<void>;
   denyInvoice: (id: string, motivo: string) => Promise<void>;
+  cancelInvoice: (id: string, motivo: string) => Promise<void>;
   emitInvoice: (id: string) => void;
   bulkApproveInvoices: (ids: string[], user: string) => Promise<void>;
-  addNoteToInvoice: (id: string, noteText: string, user: string) => void;
-  snoozeInvoice: (id: string, date: string) => void;
+  addNoteToInvoice: (id: string, noteText: string, user: string) => Promise<void>;
+  snoozeInvoice: (id: string, date: string) => Promise<void>;
+  loadInvoiceNotes: (chave: string) => Promise<Array<{ id: string; text: string; user: string; date: string }>>;
   updateInvoice: (id: string, updates: Partial<Invoice>) => void;
   globalDateRange: DateRange;
   setGlobalDateRange: (range: DateRange) => void;
@@ -36,13 +42,28 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
   const [error, setError] = useState<string | null>(null);
   const [dryRun, setDryRun] = useState(false);
 
-  // Filtro inicial = HOJE (sem isso, painel carrega 2657 notas históricas)
+  // Filtro inicial = HOJE (persiste em localStorage)
   const today = new Date();
-  const [globalDateRange, setGlobalDateRange] = useState<DateRange>({
-    label: 'Hoje',
-    from: today,
-    to: today,
+  const [globalDateRange, _setGlobalDateRange] = useState<DateRange>(() => {
+    try {
+      const raw = localStorage.getItem('rota31:dateRange');
+      if (raw) {
+        const o = JSON.parse(raw);
+        return {
+          label: o.label || 'Hoje',
+          from: o.from ? new Date(o.from) : today,
+          to: o.to ? new Date(o.to) : today,
+        };
+      }
+    } catch {}
+    return { label: 'Hoje', from: today, to: today };
   });
+  const setGlobalDateRange = (r: DateRange) => {
+    _setGlobalDateRange(r);
+    try {
+      localStorage.setItem('rota31:dateRange', JSON.stringify({ label: r.label, from: r.from, to: r.to }));
+    } catch {}
+  };
 
   const refresh = async () => {
     try {
@@ -71,13 +92,23 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
 
   // ── Mutações otimistas: atualiza UI imediato + chama backend ─
 
-  const approveInvoice = async (id: string, user: string) => {
+  const approveInvoice = async (
+    id: string,
+    user: string,
+    opts?: { valorFreteOverride?: number; motivoOverride?: string }
+  ) => {
     const inv = invoices.find(i => i.id === id);
     if (!inv) return;
     const prev = invoices;
-    setInvoices(p => p.map(x => x.id === id ? { ...x, status: 'aprovada', aprovadoPor: user, aprovadoEm: new Date().toISOString() } : x));
+    setInvoices(p => p.map(x => x.id === id ? {
+      ...x,
+      status: 'aprovada',
+      aprovadoPor: user,
+      aprovadoEm: new Date().toISOString(),
+      valorFrete: opts?.valorFreteOverride ?? x.valorFrete,
+    } : x));
     try {
-      await api.approve(inv.chaveAcesso, { user, execId: (inv as any).execId });
+      await api.approve(inv.chaveAcesso, { user, execId: (inv as any).execId, ...opts });
     } catch (e: any) {
       console.error('Erro approve:', e);
       setInvoices(prev);
@@ -100,6 +131,25 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const cancelInvoice = async (id: string, motivo: string) => {
+    const inv = invoices.find(i => i.id === id);
+    if (!inv) return;
+    if (!motivo || motivo.trim().length < 3) {
+      alert('Informe o motivo do cancelamento (mínimo 3 caracteres)');
+      return;
+    }
+    const prev = invoices;
+    setInvoices(p => p.map(x => x.id === id ? { ...x, status: 'cancelada', erroMsg: motivo } : x));
+    try {
+      const r = await api.cancelInvoice(inv.chaveAcesso, { motivo });
+      if (r.aviso) console.info('Cancelamento:', r.aviso);
+    } catch (e: any) {
+      console.error('Erro cancel:', e);
+      setInvoices(prev);
+      alert(`Erro ao cancelar: ${e.message}`);
+    }
+  };
+
   const bulkApproveInvoices = async (ids: string[], user: string) => {
     await Promise.all(ids.map(id => approveInvoice(id, user)));
   };
@@ -119,23 +169,42 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
     }));
   };
 
-  const addNoteToInvoice = (id: string, noteText: string, user: string) => {
-    setInvoices(prev => prev.map(inv => {
-      if (inv.id === id) {
-        const newNote = {
-          id: Math.random().toString(36).substr(2, 9),
-          text: noteText,
-          date: new Date().toISOString(),
-          user,
-        };
-        return { ...inv, notasInternas: [...(inv.notasInternas || []), newNote] };
-      }
-      return inv;
-    }));
+  const addNoteToInvoice = async (id: string, noteText: string, user: string) => {
+    const inv = invoices.find(i => i.id === id);
+    if (!inv) return;
+    // Otimista
+    const tempNote = { id: 'tmp-' + Date.now(), text: noteText, date: new Date().toISOString(), user };
+    setInvoices(prev => prev.map(x => x.id === id ? { ...x, notasInternas: [...(x.notasInternas || []), tempNote] } : x));
+    try {
+      await api.addInvoiceNote(inv.chaveAcesso, noteText);
+    } catch (e: any) {
+      console.error('Erro salvar nota:', e);
+      alert('Erro ao salvar nota: ' + e.message);
+    }
   };
 
-  const snoozeInvoice = (id: string, date: string) => {
-    setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, snoozeUntil: date } : inv));
+  const loadInvoiceNotes = async (chave: string) => {
+    try {
+      const r = await api.listInvoiceNotes(chave);
+      // Sincroniza no state
+      setInvoices(prev => prev.map(x => x.chaveAcesso === chave ? { ...x, notasInternas: r.notes } : x));
+      return r.notes;
+    } catch (e: any) {
+      console.error('Erro listar notas:', e);
+      return [];
+    }
+  };
+
+  const snoozeInvoice = async (id: string, date: string) => {
+    const inv = invoices.find(i => i.id === id);
+    if (!inv) return;
+    setInvoices(prev => prev.map(x => x.id === id ? { ...x, snoozeUntil: date } : x));
+    try {
+      await api.setInvoiceSnooze(inv.chaveAcesso, date);
+    } catch (e: any) {
+      console.error('Erro snooze:', e);
+      alert('Erro ao adiar: ' + e.message);
+    }
   };
 
   const updateInvoice = (id: string, updates: Partial<Invoice>) => {
@@ -145,8 +214,8 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
   return (
     <InvoiceContext.Provider value={{
       invoices, loading, error, refresh, dryRun,
-      approveInvoice, denyInvoice, emitInvoice, bulkApproveInvoices,
-      addNoteToInvoice, snoozeInvoice, updateInvoice,
+      approveInvoice, denyInvoice, cancelInvoice, emitInvoice, bulkApproveInvoices,
+      addNoteToInvoice, snoozeInvoice, loadInvoiceNotes, updateInvoice,
       globalDateRange, setGlobalDateRange,
     }}>
       {children}

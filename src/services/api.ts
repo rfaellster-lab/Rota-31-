@@ -82,11 +82,26 @@ export const api = {
   getInvoices: () => request<InvoicesResponse>('GET', '/invoices'),
   getInvoice: (chave: string) => request<Invoice>('GET', `/invoices/${encodeURIComponent(chave)}`),
 
-  approve: (chave: string, opts: { user?: string; execId?: string } = {}) =>
+  approve: (chave: string, opts: { user?: string; execId?: string; valorFreteOverride?: number; motivoOverride?: string } = {}) =>
     request<{ ok: boolean; dryRun?: boolean }>('POST', `/invoices/${encodeURIComponent(chave)}/approve`, opts),
 
   deny: (chave: string, opts: { user?: string; execId?: string; motivo?: string } = {}) =>
     request<{ ok: boolean; dryRun?: boolean }>('POST', `/invoices/${encodeURIComponent(chave)}/deny`, opts),
+
+  cancelInvoice: (chave: string, opts: { motivo: string; user?: string }) =>
+    request<{ ok: boolean; dryRun?: boolean; aviso?: string }>('POST', `/invoices/${encodeURIComponent(chave)}/cancel`, opts),
+
+  // ── Notas internas + snooze (persistentes em Firestore) ────
+  listInvoiceNotes: (chave: string) =>
+    request<{ count: number; notes: Array<{ id: string; text: string; user: string; date: string }> }>(
+      'GET', `/invoices/${encodeURIComponent(chave)}/notes`
+    ),
+
+  addInvoiceNote: (chave: string, text: string) =>
+    request<{ ok: boolean; id?: string }>('POST', `/invoices/${encodeURIComponent(chave)}/note`, { text }),
+
+  setInvoiceSnooze: (chave: string, until: string | null) =>
+    request<{ ok: boolean }>('PATCH', `/invoices/${encodeURIComponent(chave)}/snooze`, { until }),
 
   // ── Rules ──────────────────────────────────────────────────
   getRules: () => request<{ count: number; rules: any[] }>('GET', '/rules'),

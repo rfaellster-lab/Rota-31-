@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useInvoices } from "../store/InvoiceContext";
 import { useAuth } from "../store/AuthContext";
 import { Invoice } from "../types";
@@ -17,6 +17,11 @@ import {
   FileText,
   Settings,
   ArrowRight,
+  Pencil,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
 import {
   formatDistanceToNow,
@@ -29,6 +34,33 @@ import {
 import { ptBR } from "date-fns/locale";
 import { DateRangePicker } from "../components/DateRangePicker";
 import { DashboardCharts } from "../components/DashboardCharts";
+
+/**
+ * Converte código de motivo de alerta em label legível para o usuário.
+ * @story Editar frete + alerta visual (Onda 2)
+ * @agent @aios-master
+ */
+function motivoToLabel(motivo: string, inv: Invoice): string {
+  switch (motivo) {
+    case "freteAcimaThreshold": {
+      const pct =
+        inv.valorNota > 0
+          ? Math.round((inv.valorFrete / inv.valorNota) * 100)
+          : 0;
+      return `Frete acima de 20% do valor da NF (atual: ${pct}%)`;
+    }
+    case "freteZeroOuNegativo":
+      return "Frete calculado como zero ou negativo";
+    case "semRegra":
+      return "Sem regra de frete cadastrada para este cliente";
+    case "semEndereco":
+      return "Sem endereço de destino válido";
+    case "pagadorIndefinido":
+      return "Pagador do frete não identificado";
+    default:
+      return motivo;
+  }
+}
 
 export default function Dashboard() {
   const {
@@ -44,7 +76,8 @@ export default function Dashboard() {
   const { user } = useAuth();
   const userLabel = user?.displayName || user?.email || "Usuário";
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("todos");
+  // Default = pendentes (foco do Dashboard é decidir, histórico fica em /historico)
+  const [statusFilter, setStatusFilter] = useState<string>("pendente");
   const [pagadorFilter, setPagadorFilter] = useState<string>("todos");
 
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
@@ -57,9 +90,24 @@ export default function Dashboard() {
     "detalhes" | "notas" | "xml"
   >("detalhes");
   const [newNote, setNewNote] = useState("");
-  const [isEditingFrete, setIsEditingFrete] = useState(false);
-  const [editedFreteValue, setEditedFreteValue] = useState("");
-  const { updateInvoice } = useInvoices();
+
+  // Onda 2 — edição de frete + motivo obrigatório
+  const [valorFreteLocal, setValorFreteLocal] = useState<number>(0);
+  const [motivoEdicao, setMotivoEdicao] = useState<string>("");
+  const [motivoOutroTexto, setMotivoOutroTexto] = useState<string>("");
+
+  // Paginação da tabela principal
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  // Reset states locais quando muda a invoice selecionada
+  useEffect(() => {
+    if (selectedInvoice) {
+      setValorFreteLocal(selectedInvoice.valorFrete);
+      setMotivoEdicao("");
+      setMotivoOutroTexto("");
+    }
+  }, [selectedInvoice?.id]);
 
   // Filter invoices based on global properties
   const periodInvoices = invoices.filter((inv) => {
@@ -111,7 +159,7 @@ export default function Dashboard() {
     }).format(val);
 
   // Filtering
-  const filtered = periodInvoices
+  const filtered = useMemo(() => periodInvoices
     .filter((inv) => {
       if (statusFilter !== "todos" && inv.status !== statusFilter) return false;
       if (
@@ -135,7 +183,18 @@ export default function Dashboard() {
     .sort(
       (a, b) =>
         new Date(b.detectadoEm).getTime() - new Date(a.detectadoEm).getTime(),
-    );
+    ), [periodInvoices, statusFilter, pagadorFilter, searchTerm]);
+
+  // Paginação derivada
+  const totalItems = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const startIdx = (safePage - 1) * pageSize;
+  const endIdx = Math.min(startIdx + pageSize, totalItems);
+  const pageItems = filtered.slice(startIdx, endIdx);
+
+  // Reset page quando filtros mudam
+  useEffect(() => { setCurrentPage(1); }, [statusFilter, pagadorFilter, searchTerm, globalDateRange, pageSize]);
 
   const handleToggleSelection = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -146,10 +205,10 @@ export default function Dashboard() {
   };
 
   const handleToggleAll = () => {
-    if (selectedIds.size === filtered.length && filtered.length > 0) {
+    if (selectedIds.size === pageItems.length && pageItems.length > 0) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filtered.map((i) => i.id)));
+      setSelectedIds(new Set(pageItems.map((i) => i.id)));
     }
   };
 
@@ -226,80 +285,20 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Pendentes */}
-      <div className="col-span-1 md:col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex flex-col justify-between min-h-[100px]">
-        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-          Pendentes
-        </span>
-        <div className="flex flex-col gap-1 mt-2">
-          <span className="text-3xl font-black text-[#F26522]">
-            {pending.length}
-          </span>
-          <span className="text-[10px] text-orange-600 font-medium animate-pulse">
-            Aguardando
-          </span>
+      {/* Resumo enxuto pra emissão (só pendentes em destaque) */}
+      <div className="col-span-2 md:col-span-12 bg-gradient-to-r from-orange-50 via-white to-white rounded-2xl px-5 py-3 shadow-sm border border-orange-100 flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <div className="text-3xl font-black text-[#F26522]">{pending.length}</div>
+          <div>
+            <p className="text-xs font-bold text-orange-700 uppercase tracking-widest">Notas pendentes</p>
+            <p className="text-[11px] text-slate-500">Aguardando sua decisão de aprovação</p>
+          </div>
         </div>
-      </div>
-
-      {/* Aprovadas Hoje */}
-      <div className="col-span-1 md:col-span-3 bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex flex-col justify-between min-h-[100px]">
-        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-          Aprovadas
-        </span>
-        <div className="flex flex-col gap-1 mt-2">
-          <span className="text-3xl font-black text-slate-800">
-            {approvedTotal.length}
-          </span>
-          <span className="text-[10px] font-bold text-green-600">
-            {formatMoney(approvedValue)}
-          </span>
-        </div>
-      </div>
-
-      {/* Negadas Hoje */}
-      <div className="col-span-1 md:col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex flex-col justify-between min-h-[100px]">
-        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-          Negadas
-        </span>
-        <div className="flex flex-col gap-1 mt-2">
-          <span className="text-3xl font-black text-slate-800">
-            {deniedTotal.length}
-          </span>
-        </div>
-      </div>
-
-      {/* Emitidas Hoje */}
-      <div className="col-span-1 md:col-span-3 bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex flex-col justify-between min-h-[100px]">
-        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-          Emitidas
-        </span>
-        <div className="flex flex-col gap-1 mt-2">
-          <span className="text-3xl font-black text-slate-800">
-            {emittedTotal.length}
-          </span>
-          <span className="text-[10px] font-bold text-slate-500">
-            {formatMoney(emittedValue)}
-          </span>
-        </div>
-      </div>
-
-      {/* Com Erro */}
-      <div className="col-span-2 md:col-span-2 bg-red-50 rounded-2xl p-4 shadow-sm border border-red-100 flex flex-col sm:flex-row md:flex-col justify-between min-h-[100px]">
-        <span className="text-[11px] font-bold text-red-400 uppercase tracking-widest">
-          Com Erro
-        </span>
-        <div className="flex items-baseline gap-2 mt-2">
-          <span className="text-3xl font-black text-red-600">
-            {errorInvoices.length}
-          </span>
-          <span className="text-[10px] text-red-700 font-bold tracking-tighter">
-            ATENÇÃO
-          </span>
-        </div>
-      </div>
-
-      <div className="col-span-2 md:col-span-12">
-        <DashboardCharts invoices={periodInvoices} />
+        {errorInvoices.length > 0 && (
+          <div className="text-xs font-bold text-red-600 bg-red-50 px-3 py-1.5 rounded-lg border border-red-200">
+            ⚠ {errorInvoices.length} com erro
+          </div>
+        )}
       </div>
 
       {/* Filters Bar */}
@@ -314,6 +313,9 @@ export default function Dashboard() {
             <option value="pendente">Status: Pendente</option>
             <option value="aprovada">Status: Aprovada</option>
             <option value="emitida">Status: Emitida</option>
+            <option value="negada">Status: Negada</option>
+            <option value="cancelada">Status: Cancelada</option>
+            <option value="denegada">Status: Denegada</option>
             <option value="erro">Status: Com erro</option>
           </select>
 
@@ -396,7 +398,7 @@ export default function Dashboard() {
                   </td>
                 </tr>
               ) : (
-                filtered.slice(0, 50).map((inv) => {
+                pageItems.map((inv) => {
                   const isPending = inv.status === "pendente";
 
                   return (
@@ -457,8 +459,19 @@ export default function Dashboard() {
                       </td>
 
                       <td className="px-6 py-4">
-                        <div className="font-bold text-slate-800">
-                          {inv.numero}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-slate-800">
+                            {inv.numero}
+                          </span>
+                          {inv.temAlerta && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-full bg-orange-100 text-orange-800 border border-orange-300"
+                              title="Esta nota tem validações disparadas. Veja detalhes."
+                            >
+                              <AlertTriangle className="w-3 h-3" />
+                              ATENÇÃO
+                            </span>
+                          )}
                         </div>
                         <div className="text-[10px] text-slate-400 font-mono mt-0.5">
                           ...{inv.chaveAcesso.slice(-6)}
@@ -578,6 +591,67 @@ export default function Dashboard() {
             </tbody>
           </table>
         </div>
+
+        {/* Paginação */}
+        {totalItems > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-slate-50 border-t border-slate-200 text-sm">
+            <div className="flex items-center gap-3 text-slate-600">
+              <span>
+                Mostrando <span className="font-bold text-slate-900">{startIdx + 1}</span> a <span className="font-bold text-slate-900">{endIdx}</span> de <span className="font-bold text-slate-900">{totalItems.toLocaleString('pt-BR')}</span> notas
+              </span>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="bg-white border border-slate-200 text-slate-700 text-xs rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-[#F26522]/20"
+              >
+                <option value={10}>10 por página</option>
+                <option value={25}>25 por página</option>
+                <option value={50}>50 por página</option>
+                <option value={100}>100 por página</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={safePage === 1}
+                aria-label="Primeira página"
+                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronsLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={safePage === 1}
+                aria-label="Página anterior"
+                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <span className="px-3 py-1 font-bold text-slate-700">
+                {safePage} <span className="text-slate-400 font-normal">de</span> {totalPages}
+              </span>
+
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safePage === totalPages}
+                aria-label="Próxima página"
+                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={safePage === totalPages}
+                aria-label="Última página"
+                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronsRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Deny Modal */}
@@ -754,44 +828,190 @@ export default function Dashboard() {
                           )}
                         </div>
 
-                        {selectedInvoice.status === "pendente" && (
-                          <div className="mt-4 flex flex-col sm:flex-row gap-3">
-                            <button
-                              onClick={(e) => {
-                                handleApprove(selectedInvoice.id, e);
-                                setSelectedInvoice(null);
-                              }}
-                              className="w-full sm:w-auto px-4 py-2 focus:outline-none bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium shadow-sm transition-colors flex justify-center"
-                            >
-                              Aprovar Emissão
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                handleDenyClick(selectedInvoice.id, e);
-                                setSelectedInvoice(null);
-                              }}
-                              className="w-full sm:w-auto px-4 py-2 focus:outline-none bg-white text-red-600 border border-red-200 rounded-lg hover:bg-red-50 hover:border-red-300 font-medium transition-colors flex justify-center"
-                            >
-                              Negar
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const tomorrow = new Date();
-                                tomorrow.setDate(tomorrow.getDate() + 1);
-                                snoozeInvoice(
-                                  selectedInvoice.id,
-                                  tomorrow.toISOString(),
-                                );
-                                setSelectedInvoice(null);
-                              }}
-                              className="w-full sm:w-auto px-4 py-2 focus:outline-none bg-white text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 font-medium transition-colors flex justify-center whitespace-nowrap"
-                            >
-                              Adiar (Amanhã)
-                            </button>
+                        {selectedInvoice.status === "pendente" && (() => {
+                          const valorMudou =
+                            valorFreteLocal !== selectedInvoice.valorFrete;
+                          const motivoFinal =
+                            motivoEdicao === "outro"
+                              ? motivoOutroTexto.trim()
+                              : motivoEdicao;
+                          const aprovacaoBloqueada =
+                            valorMudou && !motivoFinal;
+                          return (
+                            <>
+                              {/* Dropdown obrigatório de motivo (só aparece quando valor mudou) */}
+                              {valorMudou && (
+                                <div className="mt-4 space-y-2 bg-white/60 rounded-lg p-3 border border-orange-200">
+                                  <label
+                                    htmlFor="motivo-edicao-frete"
+                                    className="text-xs font-bold text-slate-700 uppercase tracking-wide block"
+                                  >
+                                    Motivo da edição (obrigatório)
+                                  </label>
+                                  <select
+                                    id="motivo-edicao-frete"
+                                    aria-label="Motivo da edição do valor do frete"
+                                    value={motivoEdicao}
+                                    onChange={(e) =>
+                                      setMotivoEdicao(e.target.value)
+                                    }
+                                    className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white focus:border-orange-500 focus:ring-2 focus:ring-orange-200 focus:outline-none"
+                                  >
+                                    <option value="">Selecione...</option>
+                                    <option value="frete_real_diferente">
+                                      Frete real diferente do calculado
+                                    </option>
+                                    <option value="valor_baixo_peca">
+                                      Peça de valor baixo, frete proporcional
+                                    </option>
+                                    <option value="seguradora">
+                                      Nota de seguradora, frete combinado à
+                                      parte
+                                    </option>
+                                    <option value="acordo_cliente">
+                                      Acordo específico com o cliente
+                                    </option>
+                                    <option value="erro_regra">
+                                      Regra cadastrada incorreta
+                                    </option>
+                                    <option value="outro">Outro</option>
+                                  </select>
+                                  {motivoEdicao === "outro" && (
+                                    <textarea
+                                      aria-label="Descreva o motivo da edição"
+                                      placeholder="Descreva o motivo..."
+                                      value={motivoOutroTexto}
+                                      onChange={(e) =>
+                                        setMotivoOutroTexto(e.target.value)
+                                      }
+                                      className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white focus:border-orange-500 focus:ring-2 focus:ring-orange-200 focus:outline-none min-h-[60px] resize-y"
+                                    />
+                                  )}
+                                </div>
+                              )}
+
+                              <div className="mt-4 flex flex-col sm:flex-row gap-3">
+                                <button
+                                  onClick={() => {
+                                    if (valorMudou && !motivoFinal) {
+                                      window.alert(
+                                        "Selecione o motivo da edição antes de aprovar.",
+                                      );
+                                      return;
+                                    }
+                                    approveInvoice(
+                                      selectedInvoice.id,
+                                      userLabel,
+                                      valorMudou
+                                        ? {
+                                            valorFreteOverride:
+                                              valorFreteLocal,
+                                            motivoOverride: motivoFinal,
+                                          }
+                                        : undefined,
+                                    );
+                                    setSelectedInvoice(null);
+                                  }}
+                                  disabled={aprovacaoBloqueada}
+                                  aria-label={
+                                    valorMudou
+                                      ? `Aprovar com novo frete de ${formatMoney(valorFreteLocal)}`
+                                      : "Aprovar emissão"
+                                  }
+                                  className={cn(
+                                    "w-full sm:flex-1 px-4 py-2.5 rounded-lg text-sm font-bold transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1",
+                                    valorMudou
+                                      ? "bg-orange-500 hover:bg-orange-600 text-white focus:ring-orange-400"
+                                      : "bg-emerald-600 hover:bg-emerald-700 text-white focus:ring-emerald-400",
+                                    "disabled:opacity-50 disabled:cursor-not-allowed",
+                                  )}
+                                >
+                                  {valorMudou
+                                    ? `Aprovar com novo frete (${formatMoney(valorFreteLocal)})`
+                                    : "Aprovar Emissão"}
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    handleDenyClick(selectedInvoice.id, e);
+                                    setSelectedInvoice(null);
+                                  }}
+                                  className="w-full sm:w-auto px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-300 bg-white text-red-600 border border-red-200 rounded-lg hover:bg-red-50 hover:border-red-300 font-medium transition-colors flex justify-center"
+                                >
+                                  Negar
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const tomorrow = new Date();
+                                    tomorrow.setDate(
+                                      tomorrow.getDate() + 1,
+                                    );
+                                    snoozeInvoice(
+                                      selectedInvoice.id,
+                                      tomorrow.toISOString(),
+                                    );
+                                    setSelectedInvoice(null);
+                                  }}
+                                  className="w-full sm:w-auto px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 font-medium transition-colors flex justify-center whitespace-nowrap"
+                                >
+                                  Adiar (Amanhã)
+                                </button>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Onda 2 — Bloco visual de Alertas (validações disparadas) */}
+                      {selectedInvoice.temAlerta &&
+                        selectedInvoice.motivosAlerta &&
+                        selectedInvoice.motivosAlerta.length > 0 && (
+                          <div className="rounded-xl border-2 border-orange-300 bg-orange-50 p-4 my-4">
+                            <div className="flex items-center gap-2 mb-2">
+                              <AlertTriangle className="w-5 h-5 text-orange-600" />
+                              <h3 className="text-sm font-bold text-orange-900">
+                                Atenção: validações disparadas
+                              </h3>
+                            </div>
+                            <ul className="space-y-1">
+                              {selectedInvoice.motivosAlerta.map((motivo) => (
+                                <li
+                                  key={motivo}
+                                  className="text-sm text-orange-800 flex items-start gap-2"
+                                >
+                                  <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-orange-600 shrink-0" />
+                                  <span>
+                                    {motivoToLabel(motivo, selectedInvoice)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                            <p className="text-xs text-orange-700 mt-3 italic">
+                              Você pode aprovar mesmo assim ou editar o valor
+                              do frete antes de aprovar.
+                            </p>
                           </div>
                         )}
-                      </div>
+
+                      {/* Onda 2 — Audit trail: edição anterior */}
+                      {selectedInvoice.editadoPor && (
+                        <div className="text-xs text-slate-500 flex items-center gap-1 -mt-2">
+                          <Pencil className="w-3 h-3" />
+                          <span>
+                            Editado por {selectedInvoice.editadoPor} em{" "}
+                            {selectedInvoice.editadoEm
+                              ? new Date(
+                                  selectedInvoice.editadoEm,
+                                ).toLocaleString("pt-BR")
+                              : "—"}
+                          </span>
+                          {selectedInvoice.motivoEdicao && (
+                            <span className="ml-1 italic">
+                              ({selectedInvoice.motivoEdicao})
+                            </span>
+                          )}
+                        </div>
+                      )}
 
                       {/* Accordion equivalent using simple divs for prototype */}
                       <div className="space-y-6">
@@ -829,6 +1049,93 @@ export default function Dashboard() {
                           </div>
                         </div>
 
+                        {/* Endereço de Entrega Real (essencial pra notas de seguradora) */}
+                        {(selectedInvoice as any).enderecoEntrega &&
+                          ((selectedInvoice as any).enderecoEntrega.fonte === "BLOCO_ENTREGA" ||
+                            (selectedInvoice as any).enderecoEntrega.fonte === "INFO_COMPLEMENTAR") && (
+                            <div className="border border-amber-200 rounded-xl p-4 bg-amber-50 shadow-sm">
+                              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-800 mb-3 flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4" />
+                                Endereço de Entrega Real
+                                <span className="ml-auto bg-amber-200 text-amber-900 text-[10px] px-2 py-0.5 rounded-full normal-case">
+                                  {(selectedInvoice as any).enderecoEntrega.fonte === "BLOCO_ENTREGA"
+                                    ? "Bloco <entrega> do XML"
+                                    : "Informações complementares"}
+                                </span>
+                              </h3>
+                              {(selectedInvoice as any).enderecoEntrega.nome && (
+                                <p className="font-semibold text-gray-900">
+                                  {(selectedInvoice as any).enderecoEntrega.nome}
+                                </p>
+                              )}
+                              {(selectedInvoice as any).enderecoEntrega.cnpj && (
+                                <p className="text-sm text-gray-600 mt-1">
+                                  CNPJ: {(selectedInvoice as any).enderecoEntrega.cnpj}
+                                </p>
+                              )}
+                              <p className="text-sm text-gray-700 mt-1">
+                                {[(selectedInvoice as any).enderecoEntrega.logradouro, (selectedInvoice as any).enderecoEntrega.numero]
+                                  .filter(Boolean)
+                                  .join(", ")}
+                              </p>
+                              {(selectedInvoice as any).enderecoEntrega.bairro && (
+                                <p className="text-sm text-gray-700">
+                                  Bairro: {(selectedInvoice as any).enderecoEntrega.bairro}
+                                </p>
+                              )}
+                              <p className="text-sm text-gray-700">
+                                {(selectedInvoice as any).enderecoEntrega.municipio} - {(selectedInvoice as any).enderecoEntrega.uf}
+                                {(selectedInvoice as any).enderecoEntrega.cep && ` | CEP ${(selectedInvoice as any).enderecoEntrega.cep}`}
+                              </p>
+                            </div>
+                          )}
+
+                        {/* Info da Carga (vendedor, placa, sinistro, pedido) */}
+                        {(selectedInvoice as any).cargaInfo &&
+                          ((selectedInvoice as any).cargaInfo.vendedor ||
+                            (selectedInvoice as any).cargaInfo.placa ||
+                            (selectedInvoice as any).cargaInfo.sinistro ||
+                            (selectedInvoice as any).cargaInfo.pedido ||
+                            (selectedInvoice as any).cargaInfo.condPagto) && (
+                            <div className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm">
+                              <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-3">
+                                Info da Carga
+                              </h3>
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                                {(selectedInvoice as any).cargaInfo.vendedor && (
+                                  <div>
+                                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Vendedor</p>
+                                    <p className="text-gray-700 font-medium">{(selectedInvoice as any).cargaInfo.vendedor}</p>
+                                  </div>
+                                )}
+                                {(selectedInvoice as any).cargaInfo.placa && (
+                                  <div>
+                                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Placa</p>
+                                    <p className="text-gray-700 font-mono font-medium">{(selectedInvoice as any).cargaInfo.placa}</p>
+                                  </div>
+                                )}
+                                {(selectedInvoice as any).cargaInfo.sinistro && (
+                                  <div>
+                                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Sinistro</p>
+                                    <p className="text-gray-700 font-medium">{(selectedInvoice as any).cargaInfo.sinistro}</p>
+                                  </div>
+                                )}
+                                {(selectedInvoice as any).cargaInfo.pedido && (
+                                  <div>
+                                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Pedido</p>
+                                    <p className="text-gray-700 font-medium">{(selectedInvoice as any).cargaInfo.pedido}</p>
+                                  </div>
+                                )}
+                                {(selectedInvoice as any).cargaInfo.condPagto && (
+                                  <div className="col-span-2 md:col-span-3">
+                                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Cond. Pagto</p>
+                                    <p className="text-gray-700 font-medium">{(selectedInvoice as any).cargaInfo.condPagto}</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
                         {/* Custos */}
                         <div className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm">
                           <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-4 border-b pb-2">
@@ -847,72 +1154,45 @@ export default function Dashboard() {
                               <p className="text-xs text-gray-500 mb-1">
                                 Valor do Frete
                               </p>
-                              {isEditingFrete ? (
-                                <div className="flex items-center gap-2 mt-1">
+                              {selectedInvoice.status === "pendente" ? (
+                                <div className="space-y-1">
                                   <div className="relative">
-                                    <span className="absolute left-2 top-1.5 text-xs text-gray-500 font-bold">
+                                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 font-bold pointer-events-none">
                                       R$
                                     </span>
                                     <input
                                       type="number"
-                                      className="w-24 pl-7 pr-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#F26522]/30"
-                                      value={editedFreteValue}
-                                      onChange={(e) =>
-                                        setEditedFreteValue(e.target.value)
-                                      }
+                                      aria-label="Valor do frete (editável)"
+                                      className={cn(
+                                        "w-full pl-7 pr-2 py-1.5 text-sm rounded-lg bg-white focus:outline-none focus:ring-2 transition-colors",
+                                        valorFreteLocal !==
+                                          selectedInvoice.valorFrete
+                                          ? "border-2 border-orange-400 focus:ring-orange-200"
+                                          : "border border-gray-300 focus:ring-[#F26522]/30 focus:border-[#F26522]",
+                                      )}
+                                      value={valorFreteLocal}
+                                      onChange={(e) => {
+                                        const v = parseFloat(e.target.value);
+                                        setValorFreteLocal(
+                                          isNaN(v) ? 0 : v,
+                                        );
+                                      }}
                                       step="0.01"
-                                      autoFocus
+                                      min="0"
                                     />
                                   </div>
-                                  <button
-                                    onClick={() => {
-                                      const val = parseFloat(editedFreteValue);
-                                      if (!isNaN(val)) {
-                                        updateInvoice(selectedInvoice.id, {
-                                          valorFrete: val,
-                                        });
-                                        setSelectedInvoice({
-                                          ...selectedInvoice,
-                                          valorFrete: val,
-                                        });
-                                        addNoteToInvoice(
-                                          selectedInvoice.id,
-                                          `Valor do frete alterado manualmente para R$ ${val.toFixed(2)}`,
-                                          userLabel,
-                                        );
-                                      }
-                                      setIsEditingFrete(false);
-                                    }}
-                                    className="text-emerald-600 p-1 hover:bg-emerald-50 rounded"
-                                  >
-                                    <Check className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => setIsEditingFrete(false)}
-                                    className="text-gray-400 p-1 hover:bg-gray-100 rounded"
-                                  >
-                                    <X className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="group flex items-center gap-2">
-                                  <p className="font-bold text-primary-600">
-                                    {formatMoney(selectedInvoice.valorFrete)}
-                                  </p>
-                                  {selectedInvoice.status === "pendente" && (
-                                    <button
-                                      onClick={() => {
-                                        setEditedFreteValue(
-                                          selectedInvoice.valorFrete.toString(),
-                                        );
-                                        setIsEditingFrete(true);
-                                      }}
-                                      className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-[#F26522] text-xs underline"
-                                    >
-                                      Editar
-                                    </button>
+                                  {valorFreteLocal !==
+                                    selectedInvoice.valorFrete && (
+                                    <p className="text-[11px] text-orange-700 font-medium">
+                                      Valor original:{" "}
+                                      {formatMoney(selectedInvoice.valorFrete)}
+                                    </p>
                                   )}
                                 </div>
+                              ) : (
+                                <p className="font-bold text-primary-600">
+                                  {formatMoney(selectedInvoice.valorFrete)}
+                                </p>
                               )}
                             </div>
                             <div>

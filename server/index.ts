@@ -314,9 +314,9 @@ app.get('/api/health', wrap(async (_req, res) => {
   res.json(checks);
 }));
 
-/** GET /api/invoices — lista com filtros (status, limit, onlyPending) */
+/** GET /api/invoices — lista com filtros (status, limit, offset, onlyPending) */
 app.get('/api/invoices', wrap(async (req, res) => {
-  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI4000`);
+  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI5000`);
   let invoices = rows
     .map((row, idx) => adaptToInvoice(row, idx + 2))
     .filter((inv): inv is NonNullable<typeof inv> => inv !== null);
@@ -326,21 +326,24 @@ app.get('/api/invoices', wrap(async (req, res) => {
   if (String(req.query.onlyPending || '') === 'true') invoices = invoices.filter(i => i.status === 'pendente');
 
   invoices.sort((a, b) => {
-    if (a.status === 'pendente' && b.status !== 'pendente') return -1;
-    if (a.status !== 'pendente' && b.status === 'pendente') return 1;
+    if (!status) {
+      if (a.status === 'pendente' && b.status !== 'pendente') return -1;
+      if (a.status !== 'pendente' && b.status === 'pendente') return 1;
+    }
     return new Date(b.detectadoEm).getTime() - new Date(a.detectadoEm).getTime();
   });
 
   const totalAll = invoices.length;
-  const limit = Math.min(parseInt(String(req.query.limit || '300'), 10) || 300, 1000);
   const pendingsCount = invoices.filter(i => i.status === 'pendente').length;
-  const top = invoices.slice(0, Math.max(limit, pendingsCount));
-  res.json({ count: top.length, total: totalAll, pendings: pendingsCount, invoices: top });
+  const limit = Math.min(parseInt(String(req.query.limit || '5000'), 10) || 5000, 5000);
+  const offset = Math.max(0, parseInt(String(req.query.offset || '0'), 10) || 0);
+  const top = invoices.slice(offset, offset + limit);
+  res.json({ count: top.length, total: totalAll, pendings: pendingsCount, offset, limit, invoices: top });
 }));
 
 /** GET /api/invoices/:chave — detalhe de uma nota */
 app.get('/api/invoices/:chave', wrap(async (req, res) => {
-  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI4000`);
+  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI5000`);
   for (let i = 0; i < rows.length; i++) {
     if (rows[i][0] === req.params.chave) {
       const inv = adaptToInvoice(rows[i], i + 2);
@@ -413,6 +416,66 @@ app.post('/api/invoices/:chave/deny', wrap(async (req: AuthedRequest, res) => {
     metadata: { execId, motivo, ok: r.ok, status: r.status },
   });
   res.status(r.ok ? 200 : 502).json({ ok: r.ok, status: r.status, user, response: text });
+}));
+
+/** POST /api/invoices/:chave/cancel — marca CT-e como cancelado no painel
+ *
+ *  IMPORTANTE: NÃO chama BSOFT/SEFAZ. Apenas registra no Sheet + audit.
+ *  Cancelamento oficial deve ser feito manualmente no TMS Rota 31.
+ *
+ *  Body: { motivo: string (obrigatório), user?: string }
+ */
+app.post('/api/invoices/:chave/cancel', wrap(async (req: AuthedRequest, res) => {
+  const { chave } = req.params;
+  const { motivo } = req.body || {};
+  const user = req.authUser?.name || req.authUser?.email || req.body?.user || 'desconhecido';
+
+  if (!motivo || !String(motivo).trim() || String(motivo).trim().length < 3) {
+    return res.status(400).json({ error: 'motivo é obrigatório (mínimo 3 caracteres)' });
+  }
+
+  if (DRY_RUN) {
+    console.log(`[DRY_RUN] cancel ${chave} by ${user} — motivo: ${motivo}`);
+    await writeAuditEvent({
+      type: 'invoice.cancel.dry_run',
+      actor: auditActor(req),
+      target: { kind: 'invoice', id: chave },
+      metadata: { motivo, dryRun: true },
+    });
+    return res.json({ ok: true, dryRun: true, chave, user, motivo });
+  }
+
+  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI5000`);
+  let rowNumber = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i][0] === chave) { rowNumber = i + 2; break; }
+  }
+  if (rowNumber === -1) {
+    return res.status(404).json({ error: 'NF não encontrada no Sheet' });
+  }
+
+  const now = new Date().toISOString();
+  try {
+    await sheetsUpdate(`${TAB_PENDENTES}!C${rowNumber}`, [['CANCELADA']]);
+    await sheetsUpdate(`${TAB_PENDENTES}!N${rowNumber}`, [[now]]);
+  } catch (e: any) {
+    console.error('Erro ao atualizar Sheet:', e);
+    return res.status(500).json({ error: 'Falha ao gravar cancelamento', detail: e.message });
+  }
+
+  try {
+    await writeAuditEvent({
+      type: 'invoice.cancel',
+      actor: auditActor(req),
+      target: { kind: 'invoice', id: chave },
+      metadata: { motivo, rowNumber, timestamp: now },
+    });
+  } catch (e) { console.warn('Falha audit:', e); }
+
+  res.json({
+    ok: true, chave, status: 'cancelada', motivo, user, timestamp: now,
+    aviso: 'Cancelamento registrado no painel. Lembre de cancelar oficialmente no TMS Rota 31 se ainda não foi feito.',
+  });
 }));
 
 /** GET /api/rules — lê CADASTRO_CLIENTES */

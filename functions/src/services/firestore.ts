@@ -169,6 +169,82 @@ export async function markNotificationRead(id: string, user?: PanelUser | null) 
   }, false);
 }
 
+// ─── Estado por nota (notas internas + snooze) ──────────────
+export interface NoteInput { text: string; user: PanelUser; }
+
+function invoiceRef(chave: string) { return db()!.collection('invoiceState').doc(chave); }
+
+export async function addInvoiceNote(chave: string, input: NoteInput) {
+  return bestEffort('addInvoiceNote', async () => {
+    await invoiceRef(chave).set({
+      lastNoteAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    const noteRef = invoiceRef(chave).collection('notes').doc();
+    await noteRef.set({
+      id: noteRef.id,
+      text: input.text,
+      user: input.user,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    return { id: noteRef.id };
+  }, null);
+}
+
+export async function listInvoiceNotes(chave: string) {
+  return bestEffort('listInvoiceNotes', async () => {
+    const snap = await invoiceRef(chave).collection('notes').orderBy('createdAt', 'asc').limit(100).get();
+    return snap.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        text: data.text || '',
+        user: data.user?.name || data.user?.email || 'desconhecido',
+        date: data.createdAt?.toDate?.()?.toISOString?.() || null,
+      };
+    });
+  }, []);
+}
+
+export async function setInvoiceSnooze(chave: string, until: string | null, user: PanelUser) {
+  return bestEffort('setInvoiceSnooze', async () => {
+    await invoiceRef(chave).set({
+      snoozeUntil: until,
+      snoozeBy: until ? user : null,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return true;
+  }, false);
+}
+
+export async function getInvoiceState(chave: string) {
+  return bestEffort('getInvoiceState', async () => {
+    const snap = await invoiceRef(chave).get();
+    if (!snap.exists) return { snoozeUntil: null, notes: [] };
+    const data = snap.data() || {};
+    const notes = await listInvoiceNotes(chave);
+    return { snoozeUntil: data.snoozeUntil || null, notes };
+  }, { snoozeUntil: null, notes: [] });
+}
+
+/** Lista state de várias chaves de uma vez (batch read) */
+export async function listInvoiceStates(chaves: string[]) {
+  return bestEffort('listInvoiceStates', async () => {
+    if (!chaves.length) return {};
+    const result: Record<string, any> = {};
+    // Firestore aceita até 500 docs em batch via getAll
+    const refs = chaves.slice(0, 500).map(c => invoiceRef(c));
+    const docs = await db()!.getAll(...refs);
+    for (const doc of docs) {
+      if (doc.exists) {
+        const data = doc.data() || {};
+        result[doc.id] = { snoozeUntil: data.snoozeUntil || null, hasNotes: !!data.lastNoteAt };
+      }
+    }
+    return result;
+  }, {});
+}
+
 export async function listPromotions(placement?: Promotion['placement']) {
   return bestEffort('listPromotions', async () => {
     const collection = db()!.collection('promotions');

@@ -1,6 +1,1 @@
-{
-  "name": "Rota 31 Express",
-  "description": "Painel SaaS para gestão e aprovação de Conhecimentos de Transporte Eletrônicos (CT-e) da Rota 31 Express.",
-  "requestFramePermissions": [],
-  "majorCapabilities": []
-}
+{"name":"Rota 31 Express - Painel CT-e","description":"Aprovação semi-automática de CT-e da Rota 31","prompt":""}

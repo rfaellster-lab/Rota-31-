@@ -146,7 +146,100 @@ export function adaptToInvoice(row: any[], rowNumber: number): any | null {
     mensagemWhats: String(row[14] || ''),
     xmlData: '',
 
+    // Dados extras pra exibição completa no modal
+    enderecoEntrega: extractEnderecoEntrega(nfe),
+    cargaInfo: extractCargaInfo(nfe),
+
+    // Onda 1 — alertas (validacoes vindas do n8n) + edição de frete
+    temAlerta: dados.temAlerta === true || hasAnyAlerta(validacoes),
+    motivosAlerta: dados.motivosAlerta || extractMotivosAlerta(validacoes),
+    validacoes,
+    valorFreteEditado: dados.valorFreteEditado || null,
+    motivoEdicao: dados.motivoEdicao || null,
+    editadoPor: dados.editadoPor || null,
+    editadoEm: dados.editadoEm || null,
+
     notasInternas: [],
     snoozeUntil: null,
+  };
+}
+
+function hasAnyAlerta(v: any): boolean {
+  if (!v || typeof v !== 'object') return false;
+  return !!(v.semRegra || v.freteZeroOuNegativo || v.freteAcimaThreshold || v.semEndereco || v.pagadorIndefinido || v.zeroOuNeg || v.acimaThreshold || v.bloqueioEndereco);
+}
+
+function extractMotivosAlerta(v: any): string[] {
+  const out: string[] = [];
+  if (!v || typeof v !== 'object') return out;
+  if (v.semRegra) out.push('semRegra');
+  if (v.freteZeroOuNegativo || v.zeroOuNeg) out.push('freteZeroOuNegativo');
+  if (v.freteAcimaThreshold || v.acimaThreshold) out.push('freteAcimaThreshold');
+  if (v.semEndereco || v.bloqueioEndereco) out.push('semEndereco');
+  if (v.pagadorIndefinido) out.push('pagadorIndefinido');
+  return out;
+}
+
+/** Extrai endereço REAL de entrega (essencial pra notas de seguradora) */
+function extractEnderecoEntrega(nfe: any) {
+  const blocoEntrega = nfe?.infoComplementarParsed?.dados?.blocoEntrega;
+  const enderecoFinal = nfe?.infoComplementarParsed?.enderecoFinal;
+  const fonte = nfe?.fonteEnderecoEntrega || enderecoFinal?.fonte || 'DESTINATARIO';
+
+  // Prioridade: bloco <entrega> do XML (mais confiável)
+  if (blocoEntrega && (blocoEntrega.logradouro || blocoEntrega.municipio)) {
+    return {
+      nome: blocoEntrega.nome || nfe?.nomeDestinatario || '',
+      cnpj: blocoEntrega.cnpj || '',
+      logradouro: blocoEntrega.logradouro || '',
+      numero: blocoEntrega.numero || '',
+      bairro: blocoEntrega.bairro || '',
+      municipio: blocoEntrega.municipio || '',
+      uf: blocoEntrega.uf || '',
+      cep: blocoEntrega.cep || '',
+      fonte: 'BLOCO_ENTREGA',
+    };
+  }
+
+  // Fallback 1: enderecoFinal parseado do infCpl
+  if (enderecoFinal && enderecoFinal.municipio) {
+    return {
+      nome: nfe?.nomeDestinatario || '',
+      cnpj: '',
+      logradouro: enderecoFinal.logradouro || '',
+      numero: enderecoFinal.numero || '',
+      bairro: enderecoFinal.bairro || '',
+      municipio: enderecoFinal.municipio || '',
+      uf: enderecoFinal.uf || '',
+      cep: enderecoFinal.cep || '',
+      fonte: enderecoFinal.fonte || 'INFO_COMPLEMENTAR',
+    };
+  }
+
+  // Fallback 2: campos diretos
+  return {
+    nome: nfe?.nomeDestinatario || '',
+    cnpj: '',
+    logradouro: nfe?.logradouroEntrega || nfe?.logradouroDestinatario || '',
+    numero: nfe?.numeroEntrega || nfe?.numeroDestinatario || '',
+    bairro: nfe?.bairroEntrega || nfe?.bairroDestinatario || '',
+    municipio: nfe?.municipioEntrega || nfe?.municipioDestinatario || '',
+    uf: nfe?.ufEntrega || nfe?.ufDestinatario || '',
+    cep: nfe?.cepEntrega || nfe?.cepDestinatario || '',
+    fonte,
+  };
+}
+
+/** Extrai info da carga do infCpl (vendedor, placa, sinistro, pedido) */
+function extractCargaInfo(nfe: any) {
+  const cpl = String(nfe?.infoComplementar || '');
+  const m = (re: RegExp) => { const x = cpl.match(re); return x ? x[1].trim() : ''; };
+  return {
+    vendedor: m(/Vendedor:\s*([^-\n;]+)/i),
+    placa: m(/PLACA:?\s*([A-Z0-9-]+)/i),
+    sinistro: m(/SINISTRO:?\s*([\d-]+)/i),
+    pedido: m(/(?:Pedido|PEDIDO)\s*=?\s*N?o?\s*(\w+)/i),
+    condPagto: m(/COND\.?\s*PAGTO[:\s]+([^;\n]+)/i),
+    rawTrimmed: cpl.length > 800 ? cpl.slice(0, 800) + '…' : cpl,
   };
 }

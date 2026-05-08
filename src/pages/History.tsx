@@ -1,19 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useInvoices } from '../store/InvoiceContext';
-import { Download, FileText, Settings2, Archive, X, AlertOctagon } from 'lucide-react';
+import { Download, FileText, Settings2, Archive, X, AlertOctagon, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { formatMoney } from '../utils/formatters';
 import { parseISO, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
 import { cn } from '../components/Layout';
 import { Invoice } from '../types';
 
 export default function History() {
-  const { invoices, globalDateRange, updateInvoice } = useInvoices();
+  const { invoices, globalDateRange, updateInvoice, cancelInvoice } = useInvoices();
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
-  
+  const [cancelMotivo, setCancelMotivo] = useState('');
+  const [showCancelModal, setShowCancelModal] = useState(false);
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [columnsMenuOpen, setColumnsMenuOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+
+  // Paginação
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const [columns, setColumns] = useState({
     date: true,
@@ -25,16 +31,16 @@ export default function History() {
   });
   
   // Basic filtering combining global date range, local status and search
-  const filtered = invoices.filter(inv => {
+  const filtered = useMemo(() => invoices.filter(inv => {
     // Date filter
     const invDate = parseISO(inv.detectadoEm);
     if (globalDateRange.from && !globalDateRange.to && invDate < startOfDay(globalDateRange.from)) return false;
     if (!globalDateRange.from && globalDateRange.to && invDate > endOfDay(globalDateRange.to)) return false;
     if (globalDateRange.from && globalDateRange.to && !isWithinInterval(invDate, { start: startOfDay(globalDateRange.from), end: endOfDay(globalDateRange.to) })) return false;
-    
+
     // Status filter
     if (statusFilter !== 'all' && inv.status !== statusFilter) return false;
-    
+
     // Search filter
     if (searchTerm) {
       const lower = searchTerm.toLowerCase();
@@ -42,9 +48,20 @@ export default function History() {
       const clientDoc = inv.pagador === 'REMETENTE' ? inv.remetente.cnpj : inv.destinatario.cnpj;
       if (!clientName.toLowerCase().includes(lower) && !clientDoc.includes(lower) && !inv.numero.includes(lower)) return false;
     }
-    
+
     return true;
-  }).sort((a, b) => new Date(b.detectadoEm).getTime() - new Date(a.detectadoEm).getTime());
+  }).sort((a, b) => new Date(b.detectadoEm).getTime() - new Date(a.detectadoEm).getTime()), [invoices, globalDateRange, statusFilter, searchTerm]);
+
+  // Paginação derivada
+  const totalItems = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const startIdx = (safePage - 1) * pageSize;
+  const endIdx = Math.min(startIdx + pageSize, totalItems);
+  const pageItems = filtered.slice(startIdx, endIdx);
+
+  // Reset page quando filtros mudam (evita ficar preso em página vazia)
+  useEffect(() => { setCurrentPage(1); }, [statusFilter, searchTerm, globalDateRange, pageSize]);
 
   const handleToggleSelection = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -55,10 +72,10 @@ export default function History() {
   };
 
   const handleToggleAll = () => {
-    if (selectedIds.size === filtered.length && filtered.length > 0) {
+    if (selectedIds.size === pageItems.length && pageItems.length > 0) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filtered.map(i => i.id)));
+      setSelectedIds(new Set(pageItems.map(i => i.id)));
     }
   };
 
@@ -124,16 +141,19 @@ export default function History() {
          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Status</label>
-               <select 
+               <select
                  className="w-full bg-white border border-slate-200 text-slate-700 text-sm font-semibold rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-[#F26522]/20 shadow-sm appearance-none"
                  value={statusFilter}
                  onChange={e => setStatusFilter(e.target.value)}
                >
                   <option value="all">Todos os Status</option>
+                  <option value="pendente">Pendentes</option>
+                  <option value="aprovada">Aprovadas</option>
                   <option value="emitida">Emitidas</option>
                   <option value="negada">Negadas</option>
-                  <option value="erro">Com Erro</option>
                   <option value="cancelada">Canceladas</option>
+                  <option value="denegada">Denegadas</option>
+                  <option value="erro">Com Erro</option>
                </select>
             </div>
             <div className="md:col-span-2">
@@ -155,8 +175,8 @@ export default function History() {
             <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-4 py-3 font-medium w-10">
-                   <input type="checkbox" className="rounded border-slate-300 text-[#F26522] focus:ring-[#F26522]" 
-                     checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                   <input type="checkbox" className="rounded border-slate-300 text-[#F26522] focus:ring-[#F26522]"
+                     checked={pageItems.length > 0 && selectedIds.size === pageItems.length}
                      onChange={handleToggleAll}
                    />
                 </th>
@@ -169,7 +189,7 @@ export default function History() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-               {filtered.slice(0, 30).map(inv => (
+               {pageItems.map(inv => (
                   <tr key={inv.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedInvoice(inv)}>
                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                        <input type="checkbox" className="rounded border-slate-300 text-[#F26522] focus:ring-[#F26522]" 
@@ -231,6 +251,67 @@ export default function History() {
             </tbody>
           </table>
         </div>
+
+        {/* Paginação */}
+        {totalItems > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-slate-50 border-t border-slate-200 text-sm">
+            <div className="flex items-center gap-3 text-slate-600">
+              <span>
+                Mostrando <span className="font-bold text-slate-900">{startIdx + 1}</span> a <span className="font-bold text-slate-900">{endIdx}</span> de <span className="font-bold text-slate-900">{totalItems.toLocaleString('pt-BR')}</span> notas
+              </span>
+              <select
+                value={pageSize}
+                onChange={e => setPageSize(Number(e.target.value))}
+                className="bg-white border border-slate-200 text-slate-700 text-xs rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-[#F26522]/20"
+              >
+                <option value={10}>10 por página</option>
+                <option value={25}>25 por página</option>
+                <option value={50}>50 por página</option>
+                <option value={100}>100 por página</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={safePage === 1}
+                aria-label="Primeira página"
+                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronsLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={safePage === 1}
+                aria-label="Página anterior"
+                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <span className="px-3 py-1 font-bold text-slate-700">
+                {safePage} <span className="text-slate-400 font-normal">de</span> {totalPages}
+              </span>
+
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={safePage === totalPages}
+                aria-label="Próxima página"
+                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={safePage === totalPages}
+                aria-label="Última página"
+                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronsRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Details / Audit / Cancel Modal Slideover */}
@@ -265,10 +346,10 @@ export default function History() {
                                   <p className="text-xs text-red-600 mt-1 max-w-[200px]">Envia comando de cancelamento à SEFAZ via Webhook.</p>
                                </div>
                             </div>
-                            <button 
+                            <button
                                onClick={() => {
-                                 updateInvoice(selectedInvoice.id, { status: 'cancelada' });
-                                 setSelectedInvoice({ ...selectedInvoice, status: 'cancelada' } as any);
+                                 setCancelMotivo('');
+                                 setShowCancelModal(true);
                                }}
                                className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700 shadow-sm whitespace-nowrap w-full sm:w-auto"
                             >
@@ -310,6 +391,64 @@ export default function History() {
                  </div>
               </div>
            </div>
+        </div>
+      )}
+
+      {/* Modal Cancelar CT-e — pede motivo + chama backend */}
+      {showCancelModal && selectedInvoice && (
+        <div
+          className="fixed inset-0 z-[1000000] flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm"
+          onClick={() => setShowCancelModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-2">Cancelar CT-e</h3>
+              <p className="text-sm text-gray-500 mb-4">
+                NF {selectedInvoice.numero}. Esta ação registra o cancelamento no painel.
+                <span className="block mt-2 text-amber-700 font-semibold">
+                  ⚠ O cancelamento oficial na SEFAZ deve ser feito manualmente no TMS Rota 31.
+                </span>
+              </p>
+
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-600 mb-1">
+                Motivo do cancelamento (obrigatório)
+              </label>
+              <textarea
+                value={cancelMotivo}
+                onChange={(e) => setCancelMotivo(e.target.value)}
+                placeholder="Ex: cliente desistiu, valor errado, duplicidade..."
+                className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 bg-white focus:border-red-500 focus:ring-2 focus:ring-red-200 outline-none min-h-[80px] resize-y"
+                autoFocus
+              />
+
+              <div className="mt-4 flex flex-col sm:flex-row gap-3">
+                <button
+                  onClick={() => setShowCancelModal(false)}
+                  className="flex-1 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-lg text-sm font-bold hover:bg-slate-200 transition-colors"
+                >
+                  Voltar
+                </button>
+                <button
+                  onClick={async () => {
+                    if (cancelMotivo.trim().length < 3) {
+                      alert('Informe o motivo (mínimo 3 caracteres)');
+                      return;
+                    }
+                    await cancelInvoice(selectedInvoice.id, cancelMotivo.trim());
+                    setShowCancelModal(false);
+                    setSelectedInvoice({ ...selectedInvoice, status: 'cancelada' } as any);
+                  }}
+                  disabled={cancelMotivo.trim().length < 3}
+                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Confirmar Cancelamento
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

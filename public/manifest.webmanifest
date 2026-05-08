@@ -1,0 +1,16 @@
+{
+  "name": "Rota 31 Express — Painel de Aprovação CT-e",
+  "short_name": "Rota 31",
+  "description": "Aprovação semi-automática de CT-e da Rota 31 Express",
+  "start_url": "/rota31/",
+  "scope": "/rota31/",
+  "display": "standalone",
+  "background_color": "#F3F4F6",
+  "theme_color": "#F26522",
+  "orientation": "portrait-primary",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "logo.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

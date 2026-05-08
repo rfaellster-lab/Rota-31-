@@ -79,7 +79,7 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
       {isOpen && (
         <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-2xl z-[99999] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="p-2 flex flex-col max-h-[400px] overflow-y-auto bg-white relative z-[99999]">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 py-2">Presets do Meta Ads</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 py-2">Atalhos rápidos</span>
             {presets.map((preset) => (
               <button
                 key={preset.label}

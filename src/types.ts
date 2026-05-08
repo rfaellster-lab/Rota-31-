@@ -23,6 +23,14 @@ export interface Note {
   user: string;
 }
 
+export interface ValidacoesAlerta {
+  semRegra?: boolean;
+  freteZeroOuNegativo?: boolean;
+  freteAcimaThreshold?: boolean;
+  semEndereco?: boolean;
+  pagadorIndefinido?: boolean;
+}
+
 export interface Invoice {
   id: string;
   chaveAcesso: string;
@@ -50,4 +58,12 @@ export interface Invoice {
   notasInternas?: Note[];
   xmlData?: string;
   snoozeUntil?: string | null;
+  // Onda 1 — alertas e edição de frete (opcionais, retrocompatíveis)
+  temAlerta?: boolean;
+  motivosAlerta?: string[];
+  validacoes?: ValidacoesAlerta;
+  valorFreteEditado?: number | null;
+  motivoEdicao?: string | null;
+  editadoPor?: string | null;
+  editadoEm?: string | null;
 }

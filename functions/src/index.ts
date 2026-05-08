@@ -23,6 +23,10 @@ import {
   markNotificationRead,
   syncUserProfile,
   writeAuditEvent,
+  addInvoiceNote,
+  listInvoiceNotes,
+  setInvoiceSnooze,
+  listInvoiceStates,
 } from './services/firestore.js';
 
 // ─── Config ──────────────────────────────────────────────────
@@ -44,8 +48,7 @@ const CORS_ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || 'http://localh
   .filter(Boolean);
 
 if (!SHEET_ID || !N8N_API_KEY) {
-  console.error('❌ Variáveis obrigatórias faltando: SHEET_ID, N8N_API_KEY');
-  process.exit(1);
+  console.warn('⚠️ Variáveis obrigatórias ainda não carregadas: SHEET_ID, N8N_API_KEY (ok durante build, falha em runtime se persistir)');
 }
 
 // Firebase Admin — em Cloud Functions usa default credentials do projeto rota-31---backend
@@ -297,38 +300,93 @@ app.get('/api/health', wrap(async (_req, res) => {
   res.json(checks);
 }));
 
-/** GET /api/invoices — lê APROVACOES_PENDENTES; suporta ?status=&limit=&from=&onlyPending=
- *  Filtro padrão: últimas 200 notas (mais recentes), todas as pendentes sempre incluídas */
+/** GET /api/invoices — lê APROVACOES_PENDENTES + hidrata com state Firestore
+ *  Query params:
+ *    status        — filtra apenas notas com este status (pendente|aprovada|negada|emitida|cancelada|denegada|erro)
+ *    onlyPending   — atalho para status=pendente
+ *    limit         — máximo de itens retornados (default 5000, max 5000)
+ *    offset        — offset para paginação server-side (default 0)
+ */
 app.get('/api/invoices', wrap(async (req, res) => {
-  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI4000`);
+  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI5000`);
   let invoices = rows
     .map((row, idx) => adaptToInvoice(row, idx + 2))
     .filter((inv): inv is NonNullable<typeof inv> => inv !== null);
 
   const status = String(req.query.status || '').toLowerCase();
   if (status) invoices = invoices.filter(i => i.status === status);
+  if (String(req.query.onlyPending || '') === 'true') invoices = invoices.filter(i => i.status === 'pendente');
 
-  const onlyPending = String(req.query.onlyPending || '') === 'true';
-  if (onlyPending) invoices = invoices.filter(i => i.status === 'pendente');
-
-  // ordena: pendentes primeiro, depois mais recentes
   invoices.sort((a, b) => {
-    if (a.status === 'pendente' && b.status !== 'pendente') return -1;
-    if (a.status !== 'pendente' && b.status === 'pendente') return 1;
+    // Pendentes primeiro APENAS quando não há filtro de status (default Dashboard)
+    if (!status) {
+      if (a.status === 'pendente' && b.status !== 'pendente') return -1;
+      if (a.status !== 'pendente' && b.status === 'pendente') return 1;
+    }
     return new Date(b.detectadoEm).getTime() - new Date(a.detectadoEm).getTime();
   });
 
   const totalAll = invoices.length;
-  const limit = Math.min(parseInt(String(req.query.limit || '300'), 10) || 300, 1000);
   const pendingsCount = invoices.filter(i => i.status === 'pendente').length;
-  // Mantém TODAS as pendentes + completa até `limit` com mais recentes
-  const top = invoices.slice(0, Math.max(limit, pendingsCount));
-  res.json({ count: top.length, total: totalAll, pendings: pendingsCount, invoices: top });
+
+  // Cap subiu de 1000 -> 5000 (Sheet tem ~3000 linhas histórico)
+  const limit = Math.min(parseInt(String(req.query.limit || '5000'), 10) || 5000, 5000);
+  const offset = Math.max(0, parseInt(String(req.query.offset || '0'), 10) || 0);
+  const top = invoices.slice(offset, offset + limit);
+
+  // Hidrata com snooze do Firestore (batch)
+  try {
+    const states = await listInvoiceStates(top.map(i => i.chaveAcesso));
+    for (const inv of top) {
+      const s = states[inv.chaveAcesso];
+      if (s) {
+        if (s.snoozeUntil) (inv as any).snoozeUntil = s.snoozeUntil;
+        (inv as any).hasNotes = !!s.hasNotes;
+      }
+    }
+  } catch {}
+
+  res.json({ count: top.length, total: totalAll, pendings: pendingsCount, offset, limit, invoices: top });
+}));
+
+/** GET /api/invoices/:chave/notes — lista notas internas */
+app.get('/api/invoices/:chave/notes', wrap(async (req, res) => {
+  const notes = await listInvoiceNotes(req.params.chave);
+  res.json({ count: notes.length, notes });
+}));
+
+/** POST /api/invoices/:chave/note — adiciona nota interna */
+app.post('/api/invoices/:chave/note', wrap(async (req: AuthedRequest, res) => {
+  const text = String(req.body?.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'text é obrigatório' });
+  const user = req.authUser || { uid: 'anon' };
+  const result = await addInvoiceNote(req.params.chave, { text, user });
+  await writeAuditEvent({
+    type: 'invoice.note',
+    actor: auditActor(req),
+    target: { kind: 'invoice', id: req.params.chave },
+    metadata: { textLen: text.length },
+  });
+  res.json({ ok: true, ...result });
+}));
+
+/** PATCH /api/invoices/:chave/snooze — adiar nota */
+app.patch('/api/invoices/:chave/snooze', wrap(async (req: AuthedRequest, res) => {
+  const until = req.body?.until ? String(req.body.until) : null;
+  const user = req.authUser || { uid: 'anon' };
+  const ok = await setInvoiceSnooze(req.params.chave, until, user);
+  await writeAuditEvent({
+    type: until ? 'invoice.snooze' : 'invoice.unsnooze',
+    actor: auditActor(req),
+    target: { kind: 'invoice', id: req.params.chave },
+    metadata: { until },
+  });
+  res.json({ ok });
 }));
 
 /** GET /api/invoices/:chave — detalhe de uma nota */
 app.get('/api/invoices/:chave', wrap(async (req, res) => {
-  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI4000`);
+  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI5000`);
   for (let i = 0; i < rows.length; i++) {
     if (rows[i][0] === req.params.chave) {
       const inv = adaptToInvoice(rows[i], i + 2);
@@ -338,20 +396,25 @@ app.get('/api/invoices/:chave', wrap(async (req, res) => {
   res.status(404).json({ error: 'Nota não encontrada' });
 }));
 
-/** POST /api/invoices/:chave/approve — webhook decisão SIM */
+/** POST /api/invoices/:chave/approve — webhook decisão SIM (aceita valorFreteOverride) */
 app.post('/api/invoices/:chave/approve', wrap(async (req: AuthedRequest, res) => {
   const { chave } = req.params;
-  const { execId } = req.body || {};
-  // Identidade vem do Firebase token (não confiar em body.user)
+  const { execId, valorFreteOverride, motivoOverride } = req.body || {};
   const user = req.authUser?.name || req.authUser?.email || req.body?.user || 'desconhecido';
 
+  const payload: any = { chave, exec: execId, acao: 'SIM', usuario: user };
+  if (valorFreteOverride !== undefined && valorFreteOverride !== null) {
+    payload.valorFreteOverride = Number(valorFreteOverride);
+    payload.motivoOverride = motivoOverride || 'Ajustado no painel';
+  }
+
   if (DRY_RUN) {
-    console.log(`[DRY_RUN] approve ${chave} by ${user}`);
+    console.log(`[DRY_RUN] approve ${chave} by ${user}`, payload);
     await writeAuditEvent({
       type: 'invoice.approve.dry_run',
       actor: auditActor(req),
       target: { kind: 'invoice', id: chave },
-      metadata: { execId, dryRun: true },
+      metadata: { execId, dryRun: true, override: payload.valorFreteOverride },
     });
     return res.json({ ok: true, dryRun: true, chave, user });
   }
@@ -359,14 +422,14 @@ app.post('/api/invoices/:chave/approve', wrap(async (req: AuthedRequest, res) =>
   const r = await fetch(N8N_WEBHOOK_DECISAO, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chave, exec: execId, acao: 'SIM', usuario: user }),
+    body: JSON.stringify(payload),
   });
   const text = await r.text();
   await writeAuditEvent({
     type: 'invoice.approve',
     actor: auditActor(req),
     target: { kind: 'invoice', id: chave },
-    metadata: { execId, ok: r.ok, status: r.status },
+    metadata: { execId, ok: r.ok, status: r.status, override: payload.valorFreteOverride },
   });
   res.status(r.ok ? 200 : 502).json({ ok: r.ok, status: r.status, user, response: text });
 }));
@@ -401,6 +464,81 @@ app.post('/api/invoices/:chave/deny', wrap(async (req: AuthedRequest, res) => {
     metadata: { execId, motivo, ok: r.ok, status: r.status },
   });
   res.status(r.ok ? 200 : 502).json({ ok: r.ok, status: r.status, user, response: text });
+}));
+
+/** POST /api/invoices/:chave/cancel — marca CT-e como cancelado no painel
+ *
+ *  IMPORTANTE: este endpoint NÃO chama a API do BSOFT/SEFAZ pra cancelar oficialmente.
+ *  Apenas registra o cancelamento no Sheet (STATUS=CANCELADA) + audit trail.
+ *  Cancelamento oficial na SEFAZ deve ser feito manualmente no TMS Rota 31 pelo operador.
+ *
+ *  Body: { motivo: string (obrigatório), user?: string }
+ */
+app.post('/api/invoices/:chave/cancel', wrap(async (req: AuthedRequest, res) => {
+  const { chave } = req.params;
+  const { motivo } = req.body || {};
+  const user = req.authUser?.name || req.authUser?.email || req.body?.user || 'desconhecido';
+
+  if (!motivo || !String(motivo).trim()) {
+    return res.status(400).json({ error: 'motivo é obrigatório (mínimo 3 caracteres)' });
+  }
+  if (String(motivo).trim().length < 3) {
+    return res.status(400).json({ error: 'motivo deve ter pelo menos 3 caracteres' });
+  }
+
+  if (DRY_RUN) {
+    console.log(`[DRY_RUN] cancel ${chave} by ${user} — motivo: ${motivo}`);
+    await writeAuditEvent({
+      type: 'invoice.cancel.dry_run',
+      actor: auditActor(req),
+      target: { kind: 'invoice', id: chave },
+      metadata: { motivo, dryRun: true },
+    });
+    return res.json({ ok: true, dryRun: true, chave, user, motivo });
+  }
+
+  // Localizar a linha no Sheet
+  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI5000`);
+  let rowNumber = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i][0] === chave) { rowNumber = i + 2; break; }
+  }
+  if (rowNumber === -1) {
+    return res.status(404).json({ error: 'NF não encontrada no Sheet' });
+  }
+
+  const now = new Date().toISOString();
+
+  // Atualizar STATUS (col C) e TIMESTAMP_DECISAO (col N)
+  try {
+    await sheetsUpdate(`${TAB_PENDENTES}!C${rowNumber}`, [['CANCELADA']]);
+    await sheetsUpdate(`${TAB_PENDENTES}!N${rowNumber}`, [[now]]);
+  } catch (e: any) {
+    console.error('Erro ao atualizar Sheet:', e);
+    return res.status(500).json({ error: 'Falha ao gravar cancelamento no Sheet', detail: e.message });
+  }
+
+  // Audit trail
+  try {
+    await writeAuditEvent({
+      type: 'invoice.cancel',
+      actor: auditActor(req),
+      target: { kind: 'invoice', id: chave },
+      metadata: { motivo, rowNumber, timestamp: now },
+    });
+  } catch (e) {
+    console.warn('Falha audit:', e);
+  }
+
+  res.json({
+    ok: true,
+    chave,
+    status: 'cancelada',
+    motivo,
+    user,
+    timestamp: now,
+    aviso: 'Cancelamento registrado no painel. Lembre de cancelar oficialmente no TMS Rota 31 se ainda não foi feito.',
+  });
 }));
 
 /** GET /api/rules — lê CADASTRO_CLIENTES */
@@ -474,5 +612,5 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ error: err.message });
 });
 
-// Export Function HTTP — endpoint final: /api/*
-export const api = onRequest({ cors: false, timeoutSeconds: 60, memory: '512MiB' }, app);
+// Export Function HTTP — invoker public (frontend chama direto). API key + Bearer protegem internamente.
+export const api = onRequest({ cors: false, timeoutSeconds: 60, memory: '512MiB', invoker: 'public' }, app);

@@ -1,17 +1,60 @@
+# Dependencies
 node_modules/
-build/
-dist/
-coverage/
-.DS_Store
-*.log
-.env*
-!.env.example
-
-# Build artifacts adicionais
-dist/
-functions/dist/
 functions/node_modules/
 
-# Firebase local emulator
+# Build artifacts
+build/
+dist/
+functions/dist/
+coverage/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files (NUNCA commitar)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production
+.env.production.local
+functions/.env
+functions/.env.local
+!.env.example
+
+# Firebase local
 .firebase/
 firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Backups locais (não commitar — geralmente grandes)
+n8n-backups/
+frontend-backups/
+functions-backups/
+workspace/
+
+# Scripts ad-hoc com credenciais hardcoded (debug/diagnóstico, NÃO commitar)
+scripts/
+
+# Assets originais (PNGs grandes do ChatGPT — webp finais já estão em public/banners/)
+assets/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Misc
+.cache/
+.tmp/
+*.tar.gz
+*.zip

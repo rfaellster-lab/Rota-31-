@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Calendar as CalendarIcon, History as HistoryIcon, Settings, Bell, Menu, X, CheckSquare, AlertCircle, LogOut } from 'lucide-react';
+import { LayoutDashboard, Calendar as CalendarIcon, History as HistoryIcon, Settings, Bell, Menu, X, CheckSquare, AlertCircle, LogOut, ChevronRight, ChevronLeft, BarChart3 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { useEffect, useState } from 'react';
@@ -26,7 +26,8 @@ export default function Layout() {
   const [promotions, setPromotions] = useState<Promotion[]>([]);
 
   const navigation = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+    { name: 'Emissão', href: '/', icon: LayoutDashboard },
+    { name: 'Relatórios', href: '/relatorios', icon: BarChart3 },
     { name: 'Calendário', href: '/calendario', icon: CalendarIcon },
     { name: 'Histórico', href: '/historico', icon: HistoryIcon },
     { name: 'Configuração', href: '/configuracao', icon: Settings },
@@ -63,21 +64,33 @@ export default function Layout() {
     try { await api.markNotificationRead(notification.id); } catch {}
   };
 
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
+
   return (
-    <div className="flex h-screen bg-[#F3F4F6] flex-col md:flex-row overflow-hidden font-sans text-slate-900">
+    <div className={cn("flex h-screen bg-[#F3F4F6] flex-col md:flex-row overflow-hidden font-sans text-slate-900", dryRun && "pt-6")}>
       {/* Banner DRY_RUN — proteção visual contra emissão acidental */}
       {dryRun && (
-        <div className="absolute top-0 left-0 right-0 bg-red-600 text-white text-center py-1 text-[10px] font-bold uppercase tracking-widest z-[999999] border-b-2 border-red-800 shadow-md">
+        <div className="fixed top-0 left-0 right-0 bg-red-600 text-white text-center py-1 text-[10px] font-bold uppercase tracking-widest z-[999999] border-b-2 border-red-800 shadow-md">
           ⚠ Modo Simulação ativo — aprovar/negar não emite CT-e real
         </div>
       )}
-      
-      {/* Sidebar - Desktop */}
-      <aside className="hidden md:flex flex-col w-20 bg-[#1F2937] items-center py-6 border-r border-slate-200 z-10 shrink-0">
-        <Link to="/" className="w-14 h-14 bg-white rounded-xl flex items-center justify-center mb-10 shadow-lg shrink-0 hover:opacity-90 transition-opacity p-1.5">
-          <img src="/logo.png" alt="Rota 31" className="w-full h-full object-contain" />
+
+      {/* Sidebar - Desktop (expansível por botão toggle) */}
+      <aside
+        className={cn(
+          "hidden md:flex flex-col bg-[#1F2937] items-center py-6 border-r border-slate-200 z-10 shrink-0 transition-[width] duration-200",
+          sidebarExpanded ? "w-56" : "w-20"
+        )}
+      >
+        <Link to="/" className={cn("flex items-center mb-10 shrink-0 hover:opacity-90 transition-opacity", sidebarExpanded ? "self-start ml-4 gap-2" : "")}>
+          <span className="w-14 h-14 bg-white rounded-xl flex items-center justify-center shadow-lg p-1.5 shrink-0">
+            <img src="logo.png" alt="Rota 31" className="w-full h-full object-contain" />
+          </span>
+          {sidebarExpanded && (
+            <span className="text-white font-black text-sm leading-tight">Rota 31<br /><span className="text-[#F26522] font-bold">Express</span></span>
+          )}
         </Link>
-        <nav className="flex flex-col gap-6 flex-1 w-full px-4 mt-2">
+        <nav className={cn("flex flex-col gap-2 flex-1 w-full mt-2", sidebarExpanded ? "px-3" : "px-4")}>
           {navigation.map((item) => {
             const isActive = location.pathname === item.href;
             return (
@@ -85,29 +98,48 @@ export default function Layout() {
                 key={item.name}
                 to={item.href}
                 className={cn(
-                  "p-3 rounded-xl transition-colors flex items-center justify-center relative group",
-                  isActive ? "bg-slate-700/50 text-white" : "text-slate-400 hover:text-white"
+                  "rounded-xl transition-colors flex items-center relative group",
+                  sidebarExpanded ? "px-3 py-2.5 gap-3 justify-start" : "p-3 justify-center",
+                  isActive ? "bg-slate-700/50 text-white" : "text-slate-400 hover:text-white hover:bg-slate-700/30"
                 )}
-                title={item.name}
+                title={!sidebarExpanded ? item.name : undefined}
               >
-                <item.icon className="w-6 h-6" />
+                <item.icon className="w-6 h-6 shrink-0" />
+                {sidebarExpanded && <span className="text-sm font-semibold whitespace-nowrap">{item.name}</span>}
               </Link>
             )
           })}
           <button
             onClick={() => setNotificationsOpen(true)}
-            className="p-3 text-slate-400 hover:text-white rounded-xl transition-colors flex items-center justify-center relative group mt-auto"
-            title="Alertas"
+            className={cn(
+              "rounded-xl transition-colors flex items-center text-slate-400 hover:text-white hover:bg-slate-700/30 mt-auto relative",
+              sidebarExpanded ? "px-3 py-2.5 gap-3 justify-start" : "p-3 justify-center"
+            )}
+            title={!sidebarExpanded ? "Alertas" : undefined}
           >
-            <Bell className="w-6 h-6" />
+            <Bell className="w-6 h-6 shrink-0" />
+            {sidebarExpanded && <span className="text-sm font-semibold">Alertas</span>}
             {(pendingCount > 0 || recentErrors > 0 || unreadAppCount > 0) && (
-              <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border border-[#1F2937]"></span>
+              <span className={cn("absolute w-2.5 h-2.5 bg-red-500 rounded-full border border-[#1F2937]", sidebarExpanded ? "top-2 left-7" : "top-2 right-2")}></span>
             )}
           </button>
         </nav>
         
+        {/* Botão de expansão/colapso */}
+        <button
+          onClick={() => setSidebarExpanded(o => !o)}
+          className={cn(
+            "mt-4 mx-3 self-stretch flex items-center justify-center gap-2 py-2 rounded-lg bg-slate-700/40 hover:bg-slate-700/70 text-slate-300 hover:text-white text-xs font-bold transition-colors shrink-0",
+            sidebarExpanded ? "px-3" : "px-0"
+          )}
+          title={sidebarExpanded ? "Recolher menu" : "Expandir menu"}
+        >
+          {sidebarExpanded ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          {sidebarExpanded && <span>Recolher</span>}
+        </button>
+
         {/* Banner Thor4Tech (rotativo) */}
-        <div className="mt-4 px-2 w-full shrink-0">
+        <div className="mt-3 px-2 w-full shrink-0">
           <PromoSlot placement="sidebar" variant="sidebar" />
         </div>
 
@@ -147,7 +179,7 @@ export default function Layout() {
         <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-4 sm:px-8 z-[99999] relative shrink-0 shadow-sm isolate">
            <div className="flex items-center gap-4">
               <div className="flex items-center md:hidden">
-                <img src="/logo.png" alt="Rota 31" className="w-9 h-9 mr-2 object-contain" />
+                <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Rota 31" className="w-9 h-9 mr-2 object-contain" />
               </div>
               <h1 className="text-xl font-bold text-[#1F2937]">Rota 31 Express</h1>
               <div className="hidden sm:flex items-center gap-2 bg-green-50 px-3 py-1 rounded-full">
