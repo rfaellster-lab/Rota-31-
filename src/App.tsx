@@ -17,6 +17,7 @@ import { InvoiceProvider } from './store/InvoiceContext';
 import { AuthProvider, useAuth } from './store/AuthContext';
 import { ToastContainer } from './components/organisms/ToastContainer';
 import { BackendStatusBanner } from './components/organisms/BackendStatusBanner';
+import { OnboardingTour } from './components/organisms/OnboardingTour';
 import { useFeatureFlags } from './stores/useFeatureFlags';
 import { api } from './services/api';
 
@@ -54,6 +55,7 @@ function AuthGate({ children }: { children: ReactNode }) {
     <>
       <BackendStatusBanner />
       {children}
+      <OnboardingTour />
     </>
   );
 }

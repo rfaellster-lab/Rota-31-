@@ -42,6 +42,7 @@ export default defineConfig(({mode}) => {
             'vendor-charts': ['recharts'],
             'vendor-motion': ['motion'],
             'vendor-icons': ['lucide-react'],
+            'vendor-tour': ['react-joyride'],
           },
         },
       },

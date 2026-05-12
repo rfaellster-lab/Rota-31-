@@ -187,7 +187,7 @@ export default function Layout() {
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                 <span className="text-[10px] uppercase tracking-wider font-bold text-green-700">Sistema Online</span>
               </div>
-              <div className="hidden lg:block">
+              <div className="hidden lg:block" data-tour="freshness">
                 <FreshnessIndicator
                   lastUpdated={lastUpdated}
                   refreshing={refreshing}

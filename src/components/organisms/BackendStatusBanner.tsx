@@ -77,7 +77,7 @@ export const BackendStatusBanner: FC = () => {
           onClick={() => { setStatus('checking'); void check(); }}
           className="flex shrink-0 items-center gap-1 rounded bg-white/10 px-3 py-1 text-xs font-medium hover:bg-white/20"
         >
-          <RefreshCw className={`h-3 w-3 ${status === 'checking' ? 'animate-spin' : ''}`} aria-hidden />
+          <RefreshCw className="h-3 w-3" aria-hidden />
           Tentar novamente
         </button>
       </div>

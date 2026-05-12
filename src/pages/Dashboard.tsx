@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useInvoices } from "../store/InvoiceContext";
 import { useAuth } from "../store/AuthContext";
 import { Invoice } from "../types";
@@ -36,6 +36,10 @@ import { DateRangePicker } from "../components/DateRangePicker";
 import { DashboardCharts } from "../components/DashboardCharts";
 import { useToast } from "../stores/useToastStore";
 import { EmptyState, EmptyStatePresets } from "../components/molecules/EmptyState";
+import { useKeyboardShortcuts } from "../lib/useKeyboardShortcuts";
+import { KeyboardShortcutsHelp } from "../components/organisms/KeyboardShortcutsHelp";
+import { QuickFilterBar, Clock as QFClock, AlertTriangle as QFAlert, CheckCircle2 as QFCheck, XCircle as QFX, Layers as QFLayers } from "../components/molecules/QuickFilterBar";
+import { BulkApproveDialog } from "../components/organisms/BulkApproveDialog";
 
 /**
  * Converte código de motivo de alerta em label legível para o usuário.
@@ -102,6 +106,14 @@ export default function Dashboard() {
   // Paginação da tabela principal
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+
+  // S1-03 — Navegação por teclado
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [focusedRowIdx, setFocusedRowIdx] = useState(-1);
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+
+  // S1-06 — Bulk approve dialog
+  const [bulkApproveOpen, setBulkApproveOpen] = useState(false);
 
   // Reset states locais quando muda a invoice selecionada
   useEffect(() => {
@@ -199,6 +211,181 @@ export default function Dashboard() {
   // Reset page quando filtros mudam
   useEffect(() => { setCurrentPage(1); }, [statusFilter, pagadorFilter, searchTerm, globalDateRange, pageSize]);
 
+  // S1-05 — Quick filter presets (computados a partir de periodInvoices)
+  const quickFilterPresets = useMemo(() => {
+    const isPendente = (i: Invoice) => i.status === 'pendente';
+    const hasAlert = (i: Invoice) =>
+      !!i.temAlerta || (i.motivosAlerta && i.motivosAlerta.length > 0);
+    const pendentesCount = periodInvoices.filter(isPendente).length;
+    const comAlertaCount = periodInvoices.filter((i) => isPendente(i) && hasAlert(i)).length;
+    const aprovadasCount = periodInvoices.filter((i) => i.status === 'aprovada').length;
+    const emitidasCount = periodInvoices.filter((i) => i.status === 'emitida').length;
+    const negadasCount = periodInvoices.filter((i) => i.status === 'negada' || i.status === 'cancelada' || i.status === 'denegada').length;
+
+    const isAll = statusFilter === 'todos';
+    return [
+      {
+        id: 'pendente',
+        label: 'Pendentes',
+        count: pendentesCount,
+        icon: QFClock,
+        color: 'orange' as const,
+        active: statusFilter === 'pendente' && pagadorFilter === 'todos',
+      },
+      {
+        id: 'com_alerta',
+        label: 'Com alerta',
+        count: comAlertaCount,
+        icon: QFAlert,
+        color: 'amber' as const,
+        active: false, // alerta é filtro derivado, não é status puro
+      },
+      {
+        id: 'aprovada',
+        label: 'Aprovadas',
+        count: aprovadasCount,
+        icon: QFCheck,
+        color: 'emerald' as const,
+        active: statusFilter === 'aprovada',
+      },
+      {
+        id: 'emitida',
+        label: 'Emitidas',
+        count: emitidasCount,
+        icon: QFCheck,
+        color: 'emerald' as const,
+        active: statusFilter === 'emitida',
+      },
+      {
+        id: 'negada',
+        label: 'Negadas',
+        count: negadasCount,
+        icon: QFX,
+        color: 'rose' as const,
+        active: statusFilter === 'negada',
+      },
+      {
+        id: 'todos',
+        label: 'Todas',
+        count: periodInvoices.length,
+        icon: QFLayers,
+        color: 'slate' as const,
+        active: isAll,
+      },
+    ];
+  }, [periodInvoices, statusFilter, pagadorFilter]);
+
+  const applyQuickFilter = (id: string) => {
+    setSearchTerm('');
+    setPagadorFilter('todos');
+    if (id === 'com_alerta') {
+      // "Com alerta" = pendentes + filtro derivado. Mostramos apenas pendentes
+      // e o usuário identifica visualmente os com alerta (badge na linha).
+      setStatusFilter('pendente');
+      toast.info('Pendentes com alerta destacados na lista', { durationMs: 3500 });
+    } else {
+      setStatusFilter(id);
+    }
+  };
+
+  // S1-03 — Atalhos de teclado pro Dashboard (alvo: NFs/hora 60 → 80+)
+  // Não dispara quando usuário está digitando em inputs (default do hook).
+  // Esc, /, ? funcionam mesmo quando modais estão abertos.
+  const modalOpen = !!selectedInvoice || isDenyModalOpen || showShortcutsHelp;
+  useKeyboardShortcuts([
+    {
+      key: '/',
+      description: 'Focar campo de busca',
+      handler: (e) => {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      },
+    },
+    {
+      key: '?',
+      shift: true,
+      description: 'Mostrar atalhos',
+      handler: () => setShowShortcutsHelp(true),
+    },
+    {
+      key: 'Escape',
+      allowInInput: true,
+      description: 'Fechar modal / limpar foco',
+      handler: () => {
+        if (showShortcutsHelp) { setShowShortcutsHelp(false); return; }
+        if (isDenyModalOpen) { setIsDenyModalOpen(false); return; }
+        if (selectedInvoice) { setSelectedInvoice(null); return; }
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+      },
+    },
+    {
+      key: 'j',
+      disabled: modalOpen,
+      description: 'Próxima nota (lista)',
+      handler: (e) => {
+        e.preventDefault();
+        setFocusedRowIdx((i) => Math.min(i + 1, pageItems.length - 1));
+      },
+    },
+    {
+      key: 'k',
+      disabled: modalOpen,
+      description: 'Nota anterior (lista)',
+      handler: (e) => {
+        e.preventDefault();
+        setFocusedRowIdx((i) => Math.max(i - 1, 0));
+      },
+    },
+    {
+      key: 'Enter',
+      disabled: !modalOpen && focusedRowIdx < 0,
+      allowInInput: false,
+      description: 'Abrir nota focada',
+      handler: (e) => {
+        if (modalOpen) return;
+        const inv = pageItems[focusedRowIdx];
+        if (inv) {
+          e.preventDefault();
+          setSelectedInvoice(inv);
+        }
+      },
+    },
+    {
+      key: 'a',
+      disabled: !selectedInvoice || selectedInvoice.status !== 'pendente',
+      description: 'Aprovar nota aberta',
+      handler: (e) => {
+        if (!selectedInvoice || selectedInvoice.status !== 'pendente') return;
+        e.preventDefault();
+        // Não confirma valor editado via atalho — força usar botão se houve edição.
+        if (valorFreteLocal !== selectedInvoice.valorFrete) {
+          toast.warn('Você editou o valor — use o botão Aprovar pra confirmar.');
+          return;
+        }
+        approveInvoice(selectedInvoice.id, userLabel);
+        setSelectedInvoice(null);
+        toast.success('Nota aprovada (A)');
+      },
+    },
+    {
+      key: 'n',
+      disabled: !selectedInvoice || selectedInvoice.status !== 'pendente',
+      description: 'Negar nota aberta',
+      handler: (e) => {
+        if (!selectedInvoice || selectedInvoice.status !== 'pendente') return;
+        e.preventDefault();
+        setInvoiceToDeny(selectedInvoice.id);
+        setIsDenyModalOpen(true);
+      },
+    },
+  ]);
+
+  // Reset foco quando filtros mudam (lista vira outra)
+  useEffect(() => { setFocusedRowIdx(-1); }, [statusFilter, pagadorFilter, searchTerm, currentPage]);
+
   const handleToggleSelection = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const newSet = new Set(selectedIds);
@@ -215,10 +402,41 @@ export default function Dashboard() {
     }
   };
 
+  // S1-06 — Lógica antiga (sem dialog) — mantida pra fluxo rápido sem confirmação?
+  // Não. Sempre passa pelo dialog. Botão dispara abertura do modal.
   const handleBulkApprove = () => {
-    bulkApproveInvoices(Array.from(selectedIds), userLabel);
-    setSelectedIds(new Set());
+    if (selectedIds.size === 0) return;
+    setBulkApproveOpen(true);
   };
+
+  // Confirmação do dialog — recebe lista filtrada (após exclude alerted)
+  const handleBulkApproveConfirm = async (ids: string[]) => {
+    if (ids.length === 0) {
+      toast.warn('Nenhuma nota pra aprovar.');
+      setBulkApproveOpen(false);
+      return;
+    }
+    try {
+      await bulkApproveInvoices(ids, userLabel);
+      const skipped = selectedIds.size - ids.length;
+      if (skipped > 0) {
+        toast.success(
+          `${ids.length} ${ids.length === 1 ? 'nota aprovada' : 'notas aprovadas'} — ${skipped} pulada${skipped > 1 ? 's' : ''} (com alerta)`,
+        );
+      } else {
+        toast.success(`${ids.length} ${ids.length === 1 ? 'nota aprovada' : 'notas aprovadas'}`);
+      }
+      setSelectedIds(new Set());
+      setBulkApproveOpen(false);
+    } catch (e: any) {
+      toast.error(`Erro no bulk approve: ${e?.message || 'tente novamente'}`);
+    }
+  };
+
+  const selectedInvoicesForBulk = useMemo(
+    () => pageItems.filter((i) => selectedIds.has(i.id)),
+    [pageItems, selectedIds],
+  );
 
   const handleApprove = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -332,18 +550,25 @@ export default function Dashboard() {
             <option value="destinatario">Pagador: Destinatário</option>
           </select>
         </div>
-        <div className="flex-1 max-w-md w-full md:ml-4">
+        <div className="flex-1 max-w-md w-full md:ml-4" data-tour="search">
           <div className="relative">
             <input
+              ref={searchInputRef}
               type="text"
-              placeholder="Buscar por NF-e, CNPJ ou Razão Social..."
+              placeholder="Buscar por NF-e, CNPJ ou Razão Social…  (atalho: / )"
               className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#F26522]/20"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              aria-label="Buscar notas (atalho: barra)"
             />
             <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
           </div>
         </div>
+      </div>
+
+      {/* S1-05 — Quick filter chips */}
+      <div className="col-span-2 md:col-span-12 px-2 mt-1 mb-1" data-tour="quick-filters">
+        <QuickFilterBar filters={quickFilterPresets} onSelect={applyQuickFilter} />
       </div>
 
       {selectedIds.size > 0 && (
@@ -407,8 +632,9 @@ export default function Dashboard() {
                   </td>
                 </tr>
               ) : (
-                pageItems.map((inv) => {
+                pageItems.map((inv, rowIdx) => {
                   const isPending = inv.status === "pendente";
+                  const isFocused = rowIdx === focusedRowIdx;
 
                   return (
                     <tr
@@ -422,6 +648,7 @@ export default function Dashboard() {
                         inv.status === "emitida" && "opacity-80",
                         inv.status === "erro" &&
                           "bg-red-50/30 hover:bg-red-50/50",
+                        isFocused && "ring-2 ring-inset ring-[#F26522]",
                       )}
                     >
                       <td
@@ -1399,6 +1626,30 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* S1-06 — Modal de confirmação do bulk approve */}
+      <BulkApproveDialog
+        open={bulkApproveOpen}
+        invoices={selectedInvoicesForBulk}
+        onClose={() => setBulkApproveOpen(false)}
+        onConfirm={handleBulkApproveConfirm}
+      />
+
+      {/* S1-03 — Modal de atalhos (abre com Shift+/) */}
+      <KeyboardShortcutsHelp
+        open={showShortcutsHelp}
+        onClose={() => setShowShortcutsHelp(false)}
+        shortcuts={[
+          { keys: ['/'], description: 'Focar campo de busca' },
+          { keys: ['J'], description: 'Próxima nota da lista' },
+          { keys: ['K'], description: 'Nota anterior da lista' },
+          { keys: ['Enter'], description: 'Abrir nota focada' },
+          { keys: ['A'], description: 'Aprovar nota aberta' },
+          { keys: ['N'], description: 'Negar nota aberta' },
+          { keys: ['Esc'], description: 'Fechar modal / limpar foco' },
+          { keys: ['Shift', '?'], description: 'Mostrar este painel' },
+        ]}
+      />
     </div>
   );
 }
