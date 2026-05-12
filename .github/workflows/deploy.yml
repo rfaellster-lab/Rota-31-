@@ -47,6 +47,24 @@ jobs:
           echo "✅ Build OK. Conteúdo de dist/:"
           ls -la dist/
 
+      - name: CI-gate — bundle precisa conter /api (anti silent-fail)
+        run: |
+          # Lição 2026-05-12: bundle sem /api faz painel cego em prod.
+          # Esse gate bloqueia deploy se VITE_API_URL não tiver /api.
+          BUNDLE=$(ls dist/assets/index-*.js 2>/dev/null | head -1)
+          if [ -z "$BUNDLE" ]; then
+            echo "❌ Bundle JS não encontrado"
+            exit 1
+          fi
+          if grep -qE "a\.run\.app/api" "$BUNDLE"; then
+            echo "✅ Bundle contém /api — config correta"
+          else
+            echo "❌ FAIL: bundle $BUNDLE NÃO contém '/api' — config VITE_API_URL errada"
+            echo "URLs api.run.app encontradas:"
+            grep -oE "https://[a-z0-9.-]+a\.run\.app[/a-z]*" "$BUNDLE" | sort -u
+            exit 1
+          fi
+
       - name: Deploy to FTP (Hostgator)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:

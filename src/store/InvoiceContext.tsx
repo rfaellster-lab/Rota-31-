@@ -77,6 +77,10 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
     } catch {}
   };
 
+  // Estado pra evitar toast spam: só avisa uma vez por sessão de falha contínua.
+  // Lição 2026-05-12: silent fail aqui causou 4 dias de painel cego sem ninguém notar.
+  let refreshFailedNotified = false;
+
   const refresh = async () => {
     try {
       setError(null);
@@ -84,9 +88,16 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
       const data = await api.getInvoices();
       setInvoices(data.invoices);
       setLastUpdated(Date.now());
+      refreshFailedNotified = false; // reset se voltou a funcionar
     } catch (e: any) {
       console.error('Erro ao buscar invoices:', e);
       setError(e.message || 'Erro ao carregar dados');
+      if (!refreshFailedNotified) {
+        refreshFailedNotified = true;
+        toast.error(
+          `Não conseguimos buscar as notas. ${e?.message || 'Verifique sua conexão.'} O BackendStatusBanner no topo mostra mais detalhes.`
+        );
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);

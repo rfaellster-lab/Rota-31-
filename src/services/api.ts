@@ -12,6 +12,18 @@ const API_KEY = (import.meta as any).env?.VITE_API_KEY || '';
 // Em dev: '/api' (proxied pelo Vite). Em prod: URL absoluta da Cloud Function.
 const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
 
+// Safe-guard: alerta visível no console se API_BASE estiver mal configurada.
+// Lição do bug 2026-05-12 (painel cego 4 dias): VITE_API_URL sem `/api` faz todas
+// as chamadas baterem em 404 silenciosamente. Esse log ajuda a pegar config errada
+// rapidamente no DevTools.
+if (typeof window !== 'undefined' && !API_BASE.endsWith('/api')) {
+  // eslint-disable-next-line no-console
+  console.error(
+    '[api] CONFIG ERROR: API_BASE não termina em "/api" — fetches vão dar 404. ' +
+    `Valor atual: "${API_BASE}". Esperado: terminar em "/api".`
+  );
+}
+
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

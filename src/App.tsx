@@ -16,6 +16,7 @@ import Login from './pages/Login';
 import { InvoiceProvider } from './store/InvoiceContext';
 import { AuthProvider, useAuth } from './store/AuthContext';
 import { ToastContainer } from './components/organisms/ToastContainer';
+import { BackendStatusBanner } from './components/organisms/BackendStatusBanner';
 import { useFeatureFlags } from './stores/useFeatureFlags';
 import { api } from './services/api';
 
@@ -49,7 +50,12 @@ function AuthGate({ children }: { children: ReactNode }) {
     );
   }
   if (!user) return <Login />;
-  return <>{children}</>;
+  return (
+    <>
+      <BackendStatusBanner />
+      {children}
+    </>
+  );
 }
 
 export default function App() {
