@@ -9,12 +9,17 @@ import { Invoice } from '../types';
 import { DateRange } from '../components/DateRangePicker';
 import { api } from '../services/api';
 import { useToastStore } from '../stores/useToastStore';
+import { useGamificationStore } from '../stores/useGamificationStore';
 
 // Helper: dispara toast fora de componente (Context Provider)
+type ToastOpts = { title?: string; durationMs?: number };
 const toast = {
-  error: (message: string) => useToastStore.getState().push({ level: 'error', message, durationMs: 6000 }),
-  warn: (message: string) => useToastStore.getState().push({ level: 'warn', message, durationMs: 5000 }),
-  success: (message: string) => useToastStore.getState().push({ level: 'success', message, durationMs: 4000 }),
+  error: (message: string, opts?: ToastOpts) =>
+    useToastStore.getState().push({ level: 'error', message, durationMs: opts?.durationMs ?? 6000, ...opts }),
+  warn: (message: string, opts?: ToastOpts) =>
+    useToastStore.getState().push({ level: 'warn', message, durationMs: opts?.durationMs ?? 5000, ...opts }),
+  success: (message: string, opts?: ToastOpts) =>
+    useToastStore.getState().push({ level: 'success', message, durationMs: opts?.durationMs ?? 4000, ...opts }),
 };
 
 interface InvoiceContextType {
@@ -133,11 +138,32 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
       aprovadoEm: new Date().toISOString(),
       valorFrete: opts?.valorFreteOverride ?? x.valorFrete,
     } : x));
+
+    // Sprint 2 — Optimistic XP (+10 ish) com reconcile pós-response
+    const optimisticId = useGamificationStore.getState().pushOptimistic({ amount: 10, reason: 'aguardando' });
     try {
-      await api.approve(inv.chaveAcesso, { user, execId: (inv as any).execId, ...opts });
+      const r = await api.approve(inv.chaveAcesso, { user, execId: (inv as any).execId, ...opts });
+      useGamificationStore.getState().removeOptimistic(optimisticId);
+      // Reconcile com XP real do server
+      if (r?.xp && typeof r.xp.newTotalXP === 'number') {
+        useGamificationStore.getState().reconcile({
+          totalXP: r.xp.newTotalXP,
+          level: r.xp.level,
+          rank: r.xp.rank,
+        });
+        // Notifica se subiu de nível ou rank
+        if (r.xp.leveledUp) {
+          toast.success(`Nível ${r.xp.level} desbloqueado!`, { title: '🎯 Level up' });
+        } else if (r.xp.rankedUp) {
+          toast.success(`Você é ${r.xp.rank} agora`, { title: '⭐ Rank up' });
+        } else if (r.xp.isRare) {
+          toast.success(`Sorte: ${r.xp.reason} (+${r.xp.gained} XP)`, { title: '✨ Bônus raro' });
+        }
+      }
     } catch (e: any) {
       console.error('Erro approve:', e);
       setInvoices(prev);
+      useGamificationStore.getState().removeOptimistic(optimisticId);
       toast.error(`Erro ao aprovar: ${e.message}`);
     }
   };

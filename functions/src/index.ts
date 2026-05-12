@@ -28,6 +28,8 @@ import {
   setInvoiceSnooze,
   listInvoiceStates,
 } from './services/firestore.js';
+import { creditXp } from './services/gamification/userProfile.js';
+import { createMeRouter } from './routes/me.js';
 
 // ─── Config ──────────────────────────────────────────────────
 const PORT = Number(process.env.PORT) || 3001;
@@ -248,6 +250,9 @@ app.get('/api/me', wrap(async (req: AuthedRequest, res) => {
   await syncUserProfile(req.authUser);
   res.json({ user: req.authUser || null });
 }));
+
+// Sprint 2 — Routes /api/me/* (profile, xp, badges, events) — modular em routes/me.ts
+app.use('/api/me', createMeRouter(firebaseAdminEnabled));
 
 /** GET /api/notifications — notificacoes in-app */
 app.get('/api/notifications', wrap(async (req: AuthedRequest, res) => {
@@ -519,7 +524,22 @@ app.post('/api/invoices/:chave/approve', wrap(async (req: AuthedRequest, res) =>
     target: { kind: 'invoice', id: chave },
     metadata: { execId, ok: r.ok, status: r.status, override: payload.valorFreteOverride },
   });
-  res.status(r.ok ? 200 : 502).json({ ok: r.ok, status: r.status, user, response: text });
+
+  // Sprint 2 — Credita XP se aprovação foi sucesso e firestore + auth disponíveis
+  let xpResult: any = null;
+  if (r.ok && firebaseAdminEnabled && req.authUser?.uid) {
+    try {
+      xpResult = await creditXp({
+        uid: req.authUser.uid,
+        action: 'invoice_approved',
+        invoiceId: chave,
+      });
+    } catch (e) {
+      console.warn('[xp] falhou ao creditar:', e); // não bloqueia o approve
+    }
+  }
+
+  res.status(r.ok ? 200 : 502).json({ ok: r.ok, status: r.status, user, response: text, xp: xpResult });
 }));
 
 /** POST /api/invoices/:chave/deny — webhook decisão NAO */

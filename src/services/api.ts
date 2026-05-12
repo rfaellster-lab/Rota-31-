@@ -94,11 +94,16 @@ export const api = {
   // Sprint 1 / A4
   getFeatureFlags: () => request<{ flags: Record<string, boolean>; ts: number }>('GET', '/feature-flags'),
 
+  // Sprint 2 — Gamification
+  getMyXp: () => request<{ gamification: any | null }>('GET', '/me/xp'),
+  getMyProfile: () => request<{ profile: any; gamification: any | null }>('GET', '/me/profile'),
+  getMyEvents: () => request<{ events: any[]; count: number }>('GET', '/me/events'),
+
   getInvoices: () => request<InvoicesResponse>('GET', '/invoices'),
   getInvoice: (chave: string) => request<Invoice>('GET', `/invoices/${encodeURIComponent(chave)}`),
 
   approve: (chave: string, opts: { user?: string; execId?: string; valorFreteOverride?: number; motivoOverride?: string } = {}) =>
-    request<{ ok: boolean; dryRun?: boolean }>('POST', `/invoices/${encodeURIComponent(chave)}/approve`, opts),
+    request<{ ok: boolean; dryRun?: boolean; xp?: any }>('POST', `/invoices/${encodeURIComponent(chave)}/approve`, opts),
 
   deny: (chave: string, opts: { user?: string; execId?: string; motivo?: string } = {}) =>
     request<{ ok: boolean; dryRun?: boolean }>('POST', `/invoices/${encodeURIComponent(chave)}/deny`, opts),
