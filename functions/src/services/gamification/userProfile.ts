@@ -14,6 +14,7 @@
  */
 import admin from 'firebase-admin';
 import { computeXp, levelFromXp, rankFromLevel, type XpAction, type XpContext, type XpResult, type Rank } from './xpEngine.js';
+import { detectNewUnlocks, type AchievementState } from './achievements.js';
 
 const db = () => admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
@@ -47,8 +48,24 @@ export interface GamificationState {
   longestStreak: number;
   streakLastDay?: string; // YYYY-MM-DD do último ato
   badges: Array<{ id: string; unlockedAt: string; rarity: 'common' | 'rare' | 'epic' | 'legendary' }>;
+  // Contadores de ações (pra achievements declarativos)
+  counts?: {
+    invoice_approved: number;
+    invoice_denied: number;
+    invoice_cancelled: number;
+    invoice_with_alert_resolved: number;
+    note_added: number;
+  };
   updatedAt: string;
 }
+
+const EMPTY_COUNTS = (): NonNullable<GamificationState['counts']> => ({
+  invoice_approved: 0,
+  invoice_denied: 0,
+  invoice_cancelled: 0,
+  invoice_with_alert_resolved: 0,
+  note_added: 0,
+});
 
 const EMPTY_GAMIFICATION = (uid: string): GamificationState => ({
   uid,
@@ -60,6 +77,7 @@ const EMPTY_GAMIFICATION = (uid: string): GamificationState => ({
   streakDays: 0,
   longestStreak: 0,
   badges: [],
+  counts: EMPTY_COUNTS(),
   updatedAt: new Date().toISOString(),
 });
 
@@ -141,6 +159,8 @@ export interface CreditXpResult {
   rankedUp: boolean;
   streakDays: number;
   streakKept: boolean;
+  /** Achievements desbloqueadas nesta transação (pode ser vazio) */
+  newAchievements: Array<{ id: string; label: string; description: string; rarity: 'common' | 'rare' | 'epic' | 'legendary' }>;
 }
 
 export async function creditXp(input: CreditXpInput): Promise<CreditXpResult> {
@@ -185,6 +205,36 @@ export async function creditXp(input: CreditXpInput): Promise<CreditXpResult> {
     const leveledUp = levelInfo.level > prev.level;
     const rankedUp = newRank !== prev.rank;
 
+    // Update counts (achievements)
+    const prevCounts = prev.counts || EMPTY_COUNTS();
+    const counts = { ...prevCounts };
+    if (input.action in counts) {
+      counts[input.action as keyof typeof counts] = (counts[input.action as keyof typeof counts] || 0) + 1;
+    }
+
+    // Detecta achievements novos
+    const achievementState: AchievementState = {
+      totalXP: newTotalXP,
+      level: levelInfo.level,
+      streakDays,
+      longestStreak,
+      counts,
+      currentHour: brtHour(now),
+    };
+    const alreadyUnlocked = new Set((prev.badges || []).map((b) => b.id));
+    const newUnlocks = detectNewUnlocks(achievementState, alreadyUnlocked);
+    const newBadges = newUnlocks.map((a) => ({
+      id: a.id,
+      label: a.label,
+      description: a.description,
+      rarity: a.rarity,
+      unlockedAt: isoNow,
+    }));
+    const allBadges = [
+      ...(prev.badges || []),
+      ...newBadges.map(({ id, rarity, unlockedAt }) => ({ id, rarity, unlockedAt })),
+    ];
+
     // Update gamification
     const updated: GamificationState = {
       ...prev,
@@ -196,6 +246,8 @@ export async function creditXp(input: CreditXpInput): Promise<CreditXpResult> {
       streakDays,
       longestStreak,
       streakLastDay,
+      badges: allBadges,
+      counts,
       updatedAt: isoNow,
     };
     tx.set(gamRef, updated, { merge: true });
@@ -227,6 +279,7 @@ export async function creditXp(input: CreditXpInput): Promise<CreditXpResult> {
       leveledUp,
       rankedUp,
       streakDays,
+      newAchievements: newBadges,
       streakKept,
     };
   });

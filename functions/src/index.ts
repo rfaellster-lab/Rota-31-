@@ -30,6 +30,8 @@ import {
 } from './services/firestore.js';
 import { creditXp } from './services/gamification/userProfile.js';
 import { createMeRouter } from './routes/me.js';
+import { createInsightsRouter } from './routes/insights.js';
+import { createExecutiveRouter } from './routes/executive.js';
 
 // ─── Config ──────────────────────────────────────────────────
 const PORT = Number(process.env.PORT) || 3001;
@@ -253,6 +255,20 @@ app.get('/api/me', wrap(async (req: AuthedRequest, res) => {
 
 // Sprint 2 — Routes /api/me/* (profile, xp, badges, events) — modular em routes/me.ts
 app.use('/api/me', createMeRouter(firebaseAdminEnabled));
+
+// Sprint 2 P2 — Routes /api/insights/* + /api/executive/*
+app.use('/api/insights', createInsightsRouter(firebaseAdminEnabled));
+app.use('/api/executive', createExecutiveRouter({
+  fetchAllInvoices: async () => {
+    const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI5000`);
+    const out: any[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const inv = adaptToInvoice(rows[i], i + 2);
+      if (inv) out.push(inv);
+    }
+    return out;
+  },
+}));
 
 /** GET /api/notifications — notificacoes in-app */
 app.get('/api/notifications', wrap(async (req: AuthedRequest, res) => {
@@ -722,3 +738,6 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 
 // Export Function HTTP — invoker public (frontend chama direto). API key + Bearer protegem internamente.
 export const api = onRequest({ cors: false, timeoutSeconds: 60, memory: '512MiB', invoker: 'public' }, app);
+
+// Sprint 2 P2 — Cloud Scheduler que roda computeInsights a cada 6h
+export { computeInsightsScheduled } from './scheduled/computeInsights.js';

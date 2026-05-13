@@ -8,11 +8,11 @@
  * @agent @dev
  * @created 2026-05-12
  */
-import { Router, Response, NextFunction } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import admin from 'firebase-admin';
 import { ensureUserProfile, getGamification } from '../services/gamification/userProfile.js';
 
-export interface AuthedRequest extends Express.Request {
+export interface AuthedRequest extends Request {
   authUser?: { uid: string; email?: string; name?: string; role?: string };
 }
 

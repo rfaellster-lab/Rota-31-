@@ -40,6 +40,7 @@ import { useKeyboardShortcuts } from "../lib/useKeyboardShortcuts";
 import { KeyboardShortcutsHelp } from "../components/organisms/KeyboardShortcutsHelp";
 import { QuickFilterBar, Clock as QFClock, AlertTriangle as QFAlert, CheckCircle2 as QFCheck, XCircle as QFX, Layers as QFLayers } from "../components/molecules/QuickFilterBar";
 import { BulkApproveDialog } from "../components/organisms/BulkApproveDialog";
+import { InsightSection } from "../components/organisms/InsightSection";
 
 /**
  * Converte código de motivo de alerta em label legível para o usuário.
@@ -570,6 +571,9 @@ export default function Dashboard() {
       <div className="col-span-2 md:col-span-12 px-2 mt-1 mb-1" data-tour="quick-filters">
         <QuickFilterBar filters={quickFilterPresets} onSelect={applyQuickFilter} />
       </div>
+
+      {/* Sprint 2 P2 — Insights "Você está perdendo R$ X" (só com feature flag INSIGHTS_ENABLED) */}
+      <InsightSection />
 
       {selectedIds.size > 0 && (
         <div className="col-span-2 md:col-span-12 bg-[#F26522]/10 border border-[#F26522]/30 rounded-lg p-3 flex items-center justify-between animate-in fade-in zoom-in-95 duration-200">

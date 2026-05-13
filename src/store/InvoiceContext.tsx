@@ -10,6 +10,7 @@ import { DateRange } from '../components/DateRangePicker';
 import { api } from '../services/api';
 import { useToastStore } from '../stores/useToastStore';
 import { useGamificationStore } from '../stores/useGamificationStore';
+import { useBadgeUnlockStore } from '../stores/useBadgeUnlockStore';
 
 // Helper: dispara toast fora de componente (Context Provider)
 type ToastOpts = { title?: string; durationMs?: number };
@@ -158,6 +159,10 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
           toast.success(`Você é ${r.xp.rank} agora`, { title: '⭐ Rank up' });
         } else if (r.xp.isRare) {
           toast.success(`Sorte: ${r.xp.reason} (+${r.xp.gained} XP)`, { title: '✨ Bônus raro' });
+        }
+        // Achievements novos → fila de BadgeUnlockToast
+        if (Array.isArray(r.xp.newAchievements) && r.xp.newAchievements.length > 0) {
+          useBadgeUnlockStore.getState().push(r.xp.newAchievements);
         }
       }
     } catch (e: any) {
