@@ -13,12 +13,13 @@
  * @created 2026-05-12
  */
 import { useEffect, useState, type FC } from 'react';
-import { Flame, Trophy, Sparkles } from 'lucide-react';
+import { Trophy, Sparkles } from 'lucide-react';
 import { useGamificationStore, type Rank as StoreRank } from '../../stores/useGamificationStore';
 import { useFeatureFlags } from '../../stores/useFeatureFlags';
 import { CountUp } from '../atoms/CountUp';
 import { XPBar } from '../atoms/XPBar';
 import { RankBadge, type Rank } from '../atoms/RankBadge';
+import { StreakIndicator } from '../atoms/StreakIndicator';
 
 const API_KEY = (import.meta as any).env?.VITE_API_KEY || '';
 const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
@@ -68,6 +69,8 @@ export const GamificationDock: FC = () => {
   const level = useGamificationStore((s) => s.level);
   const rank = useGamificationStore((s) => s.rank);
   const streakDays = useGamificationStore((s) => s.streakDays);
+  const longestStreak = useGamificationStore((s) => s.longestStreak);
+  const badges = useGamificationStore((s) => s.badges);
   const loaded = useGamificationStore((s) => s.loaded);
   const hydrate = useGamificationStore((s) => s.hydrate);
 
@@ -122,15 +125,7 @@ export const GamificationDock: FC = () => {
           <CountUp value={totalXP} className="text-sm font-bold text-slate-900 dark:text-slate-100" />
         </div>
         <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" aria-hidden />
-        <div className="flex flex-col items-start">
-          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-slate-500">
-            <Flame className={`h-3 w-3 ${streakDays >= 3 ? 'text-orange-500' : 'text-slate-400'}`} aria-hidden />
-            <span>Streak</span>
-          </div>
-          <span className="text-sm font-bold text-slate-900 dark:text-slate-100">
-            {streakDays}d
-          </span>
-        </div>
+        <StreakIndicator days={streakDays} size="sm" />
       </button>
 
       {expanded && (
@@ -153,18 +148,55 @@ export const GamificationDock: FC = () => {
             rankColor={rank as Rank}
           />
 
-          <div className="mt-3 grid grid-cols-2 gap-2 text-center">
+          <div className="mt-3 grid grid-cols-3 gap-2 text-center">
             <div className="rounded-lg bg-slate-50 px-2 py-1.5 dark:bg-slate-800">
               <div className="text-[10px] uppercase tracking-wider text-slate-500">Total</div>
               <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                <CountUp value={totalXP} /> XP
+                <CountUp value={totalXP} />
               </div>
             </div>
             <div className="rounded-lg bg-slate-50 px-2 py-1.5 dark:bg-slate-800">
               <div className="text-[10px] uppercase tracking-wider text-slate-500">Streak</div>
               <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                {streakDays} {streakDays === 1 ? 'dia' : 'dias'}
+                {streakDays}d
               </div>
+              {longestStreak > streakDays && (
+                <div className="text-[8px] text-slate-400">recorde: {longestStreak}d</div>
+              )}
+            </div>
+            <div className="rounded-lg bg-slate-50 px-2 py-1.5 dark:bg-slate-800">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">Selos</div>
+              <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                {badges.length}
+              </div>
+            </div>
+          </div>
+
+          {/* Hierarchy visual — 5 níveis com indicador */}
+          <div className="mt-3">
+            <div className="mb-1 text-[10px] uppercase tracking-wider text-slate-500">Hierarquia</div>
+            <div className="flex items-center justify-between gap-1">
+              {(['junior', 'pleno', 'senior', 'master', 'lendario'] as Rank[]).map((r) => {
+                const isCurrent = r === rank;
+                const dotColor = {
+                  junior: 'bg-slate-400',
+                  pleno: 'bg-blue-500',
+                  senior: 'bg-emerald-500',
+                  master: 'bg-purple-500',
+                  lendario: 'bg-gradient-to-r from-amber-400 to-rose-500',
+                }[r];
+                return (
+                  <div key={r} className="flex flex-1 flex-col items-center gap-0.5">
+                    <span
+                      className={`h-2 w-2 rounded-full ${dotColor} ${isCurrent ? 'ring-2 ring-offset-1 ring-slate-700' : 'opacity-50'}`}
+                      aria-hidden
+                    />
+                    <span className={`text-[9px] capitalize ${isCurrent ? 'font-bold text-slate-900' : 'text-slate-400'}`}>
+                      {r}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 

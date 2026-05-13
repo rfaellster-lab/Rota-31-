@@ -12,6 +12,7 @@ import { useToastStore } from '../stores/useToastStore';
 import { useGamificationStore } from '../stores/useGamificationStore';
 import { useBadgeUnlockStore } from '../stores/useBadgeUnlockStore';
 import { analytics } from '../lib/analytics';
+import { notifyComboBump } from '../lib/useComboTracker';
 
 // Helper: dispara toast fora de componente (Context Provider)
 type ToastOpts = { title?: string; durationMs?: number };
@@ -148,6 +149,9 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
       useGamificationStore.getState().removeOptimistic(optimisticId);
       // Analytics
       analytics.invoiceApproved({ chave: inv.chaveAcesso, xpGained: r?.xp?.gained, hadAlert: !!inv.temAlerta });
+
+      // Sprint 3 P2 — Combo tracker (toast visual em milestones 3/5/10/20/50)
+      notifyComboBump(toast as any);
 
       // Reconcile com XP real do server
       if (r?.xp && typeof r.xp.newTotalXP === 'number') {

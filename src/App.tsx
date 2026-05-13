@@ -27,6 +27,7 @@ import { BadgeUnlockContainer } from './components/organisms/BadgeUnlockContaine
 import { useFeatureFlags } from './stores/useFeatureFlags';
 import { api } from './services/api';
 import { analytics } from './lib/analytics';
+import { useStreakLossAversion } from './lib/useStreakLossAversion';
 
 function AuthGate({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -54,6 +55,9 @@ function AuthGate({ children }: { children: ReactNode }) {
     const role = (user as any)?.role || 'unknown';
     analytics.userLogin(uid, role);
   }, [user]);
+
+  // Sprint 3 P2 — Streak loss aversion (1x por dia, se streak ativo + late hours)
+  useStreakLossAversion();
 
   if (loading) {
     return (

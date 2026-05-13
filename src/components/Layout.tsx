@@ -1,10 +1,11 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Calendar as CalendarIcon, History as HistoryIcon, Settings, Bell, Menu, X, CheckSquare, AlertCircle, LogOut, ChevronRight, ChevronLeft, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, Calendar as CalendarIcon, History as HistoryIcon, Settings, Bell, Menu, X, CheckSquare, AlertCircle, LogOut, ChevronRight, ChevronLeft, BarChart3, ShoppingBag, TrendingUp } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useInvoices } from '../store/InvoiceContext';
 import { useAuth } from '../store/AuthContext';
+import { useFeatureFlags } from '../stores/useFeatureFlags';
 import { DateRangePicker } from './DateRangePicker';
 import { api, type AppNotification, type Promotion } from '../services/api';
 import PromoSlot from './PromoSlot';
@@ -20,19 +21,33 @@ export default function Layout() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const { globalDateRange, setGlobalDateRange, invoices, dryRun, lastUpdated, refreshing, refresh } = useInvoices();
-  const { user, signOut } = useAuth();
+  const { user, isAdmin, signOut } = useAuth();
   const userInitial = (user?.displayName || user?.email || 'U').charAt(0).toUpperCase();
   const userLabel = user?.displayName || user?.email || 'Usuário';
   const [appNotifications, setAppNotifications] = useState<AppNotification[]>([]);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
+  const xpEnabled = useFeatureFlags((s) => s.flags.XP_ENABLED);
+  const storeEnabled = useFeatureFlags((s) => s.flags.STORE_ENABLED);
+  const executiveEnabled = useFeatureFlags((s) => s.flags.EXECUTIVE_DASHBOARD_ENABLED);
 
-  const navigation = [
-    { name: 'Emissão', href: '/', icon: LayoutDashboard },
-    { name: 'Relatórios', href: '/relatorios', icon: BarChart3 },
-    { name: 'Calendário', href: '/calendario', icon: CalendarIcon },
-    { name: 'Histórico', href: '/historico', icon: HistoryIcon },
-    { name: 'Configuração', href: '/configuracao', icon: Settings },
-  ];
+  const navigation = useMemo(() => {
+    const base = [
+      { name: 'Emissão', href: '/', icon: LayoutDashboard },
+      { name: 'Relatórios', href: '/relatorios', icon: BarChart3 },
+      { name: 'Calendário', href: '/calendario', icon: CalendarIcon },
+      { name: 'Histórico', href: '/historico', icon: HistoryIcon },
+    ];
+    // Sprint 3 — Loja só aparece se XP_ENABLED + STORE_ENABLED
+    if (xpEnabled && storeEnabled) {
+      base.push({ name: 'Loja', href: '/loja', icon: ShoppingBag });
+    }
+    // Executive só pra admin com flag
+    if (isAdmin && executiveEnabled) {
+      base.push({ name: 'Executivo', href: '/executivo', icon: TrendingUp });
+    }
+    base.push({ name: 'Configuração', href: '/configuracao', icon: Settings });
+    return base;
+  }, [xpEnabled, storeEnabled, executiveEnabled, isAdmin]);
 
   const pendingCount = invoices.filter(i => i.status === 'pendente').length;
   const recentErrors = invoices.filter(i => i.status === 'erro').length;
