@@ -122,6 +122,48 @@ export const ACHIEVEMENTS: Achievement[] = [
       typeof s.currentHour === 'number' &&
       s.currentHour >= 5 && s.currentHour <= 7,
   },
+  // ─── Secretos Sprint 3 P1 ────────────────────────────────────
+  {
+    id: 'secret_sextou',
+    label: 'Sextou',
+    description: 'Aprovou notas numa sexta-feira',
+    rarity: 'common',
+    isUnlocked: (s) => {
+      // Detectado via currentHour só não basta — usamos um campo opcional
+      // a ser injetado pelo caller; sem ele, false. (Vai ser preenchido em caller futuro.)
+      return false;
+    },
+  },
+  {
+    id: 'secret_combo_10',
+    label: 'Combo 10',
+    description: '10 aprovações em sequência sem negar',
+    rarity: 'rare',
+    isUnlocked: (s) =>
+      s.counts.invoice_approved >= 10 && s.counts.invoice_denied === 0,
+  },
+  {
+    id: 'secret_decision_master',
+    label: 'Decisão Master',
+    description: 'Critério bem balanceado: 100 aprovadas + 10 negadas',
+    rarity: 'epic',
+    isUnlocked: (s) =>
+      s.counts.invoice_approved >= 100 && s.counts.invoice_denied >= 10,
+  },
+  {
+    id: 'secret_streak_14',
+    label: 'Quinzena',
+    description: '14 dias consecutivos',
+    rarity: 'rare',
+    isUnlocked: (s) => s.longestStreak >= 14,
+  },
+  {
+    id: 'secret_legendary_xp',
+    label: 'Lenda Viva',
+    description: 'Acumulou 50.000 XP',
+    rarity: 'legendary',
+    isUnlocked: (s) => s.totalXP >= 50000,
+  },
 ];
 
 /**

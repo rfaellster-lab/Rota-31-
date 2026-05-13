@@ -11,6 +11,7 @@ import { api } from '../services/api';
 import { useToastStore } from '../stores/useToastStore';
 import { useGamificationStore } from '../stores/useGamificationStore';
 import { useBadgeUnlockStore } from '../stores/useBadgeUnlockStore';
+import { analytics } from '../lib/analytics';
 
 // Helper: dispara toast fora de componente (Context Provider)
 type ToastOpts = { title?: string; durationMs?: number };
@@ -145,6 +146,9 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
     try {
       const r = await api.approve(inv.chaveAcesso, { user, execId: (inv as any).execId, ...opts });
       useGamificationStore.getState().removeOptimistic(optimisticId);
+      // Analytics
+      analytics.invoiceApproved({ chave: inv.chaveAcesso, xpGained: r?.xp?.gained, hadAlert: !!inv.temAlerta });
+
       // Reconcile com XP real do server
       if (r?.xp && typeof r.xp.newTotalXP === 'number') {
         useGamificationStore.getState().reconcile({
@@ -155,14 +159,17 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
         // Notifica se subiu de nível ou rank
         if (r.xp.leveledUp) {
           toast.success(`Nível ${r.xp.level} desbloqueado!`, { title: '🎯 Level up' });
+          analytics.levelUp({ newLevel: r.xp.level, totalXP: r.xp.newTotalXP });
         } else if (r.xp.rankedUp) {
           toast.success(`Você é ${r.xp.rank} agora`, { title: '⭐ Rank up' });
+          analytics.rankUp({ newRank: r.xp.rank, level: r.xp.level });
         } else if (r.xp.isRare) {
           toast.success(`Sorte: ${r.xp.reason} (+${r.xp.gained} XP)`, { title: '✨ Bônus raro' });
         }
         // Achievements novos → fila de BadgeUnlockToast
         if (Array.isArray(r.xp.newAchievements) && r.xp.newAchievements.length > 0) {
           useBadgeUnlockStore.getState().push(r.xp.newAchievements);
+          r.xp.newAchievements.forEach((b: any) => analytics.achievementUnlocked({ id: b.id, rarity: b.rarity }));
         }
       }
     } catch (e: any) {

@@ -32,8 +32,10 @@ import { creditXp } from './services/gamification/userProfile.js';
 import { createMeRouter } from './routes/me.js';
 import { createInsightsRouter } from './routes/insights.js';
 import { createExecutiveRouter } from './routes/executive.js';
+import { createStoreRouter } from './routes/store.js';
 import { computeInsights as computeInsightsPure } from './services/insights/computeInsights.js';
 import { persistInsights } from './services/insights/persistInsights.js';
+import { backfillUser } from './services/gamification/backfill.js';
 
 // ─── Config ──────────────────────────────────────────────────
 const PORT = Number(process.env.PORT) || 3001;
@@ -258,8 +260,9 @@ app.get('/api/me', wrap(async (req: AuthedRequest, res) => {
 // Sprint 2 — Routes /api/me/* (profile, xp, badges, events) — modular em routes/me.ts
 app.use('/api/me', createMeRouter(firebaseAdminEnabled));
 
-// Sprint 2 P2 — Routes /api/insights/* + /api/executive/*
+// Sprint 2 P2 — Routes /api/insights/* + /api/executive/* + Sprint 3 store
 app.use('/api/insights', createInsightsRouter(firebaseAdminEnabled));
+app.use('/api/store', createStoreRouter(firebaseAdminEnabled));
 app.use('/api/executive', createExecutiveRouter({
   fetchAllInvoices: async () => {
     const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI5000`);
@@ -270,6 +273,44 @@ app.use('/api/executive', createExecutiveRouter({
     }
     return out;
   },
+}));
+
+/**
+ * POST /api/admin/backfill-user — admin-only, calcula XP retroativo do user.
+ * Lê Sheets, conta aprovadas/negadas/canceladas por `aprovadoPor == email`, aplica backfillUser().
+ * Idempotente: marca em userProfiles/{uid}.backfilledAt.
+ * @story Sprint 2 P3 / Backfill
+ */
+app.post('/api/admin/backfill-user', verifyFirebaseToken as any, requireAdmin as any, wrap(async (req: AuthedRequest, res) => {
+  if (!firebaseAdminEnabled) return res.status(503).json({ error: 'Firestore não inicializado' });
+  const { targetUid, targetEmail } = req.body || {};
+  if (!targetUid || !targetEmail) {
+    return res.status(400).json({ error: 'targetUid + targetEmail são obrigatórios' });
+  }
+  // Conta no Sheets (campo aprovadoPor — pode ser nome OU email)
+  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI5000`);
+  let approved = 0;
+  let denied = 0;
+  let cancelled = 0;
+  for (const row of rows) {
+    const inv = adaptToInvoice(row, 0);
+    if (!inv) continue;
+    const actor = (inv.aprovadoPor || '').toLowerCase();
+    // Match por email OU substring (caso seja nome)
+    const match =
+      actor === targetEmail.toLowerCase() ||
+      actor.includes(targetEmail.toLowerCase().split('@')[0]);
+    if (!match) continue;
+    if (inv.status === 'aprovada' || inv.status === 'emitida') approved++;
+    else if (inv.status === 'negada' || inv.status === 'denegada') denied++;
+    else if (inv.status === 'cancelada') cancelled++;
+  }
+  const summary = await backfillUser(targetUid, {
+    invoice_approved: approved,
+    invoice_denied: denied,
+    invoice_cancelled: cancelled,
+  });
+  res.json({ ok: true, summary, foundInSheets: { approved, denied, cancelled } });
 }));
 
 /**

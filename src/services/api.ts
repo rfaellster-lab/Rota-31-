@@ -99,6 +99,14 @@ export const api = {
   getMyProfile: () => request<{ profile: any; gamification: any | null }>('GET', '/me/profile'),
   getMyEvents: () => request<{ events: any[]; count: number }>('GET', '/me/events'),
 
+  // Sprint 3 — Loja XP
+  getStoreItems: () => request<{ items: any[]; level: number; totalXP: number }>('GET', '/store/items'),
+  redeemStoreItem: (itemId: string) =>
+    request<{ ok: boolean; error?: string; itemId: string; costXP: number; newTotalXP?: number; mysteryReward?: { kind: string; label: string } }>(
+      'POST', `/store/redeem/${encodeURIComponent(itemId)}`
+    ),
+  getMyPurchases: () => request<{ purchases: any[]; count: number }>('GET', '/store/purchases'),
+
   getInvoices: () => request<InvoicesResponse>('GET', '/invoices'),
   getInvoice: (chave: string) => request<Invoice>('GET', `/invoices/${encodeURIComponent(chave)}`),
 

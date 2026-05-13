@@ -14,8 +14,9 @@ import Config from './pages/Config';
 import Relatorios from './pages/Relatorios';
 import Login from './pages/Login';
 
-// Sprint 2 P2 — lazy load (não pesa no bundle inicial)
+// Sprint 2 P2 + Sprint 3 — lazy load (não pesa no bundle inicial)
 const DashboardExecutivo = lazy(() => import('./pages/DashboardExecutivo'));
+const Loja = lazy(() => import('./pages/Loja'));
 import { InvoiceProvider } from './store/InvoiceContext';
 import { AuthProvider, useAuth } from './store/AuthContext';
 import { ToastContainer } from './components/organisms/ToastContainer';
@@ -25,6 +26,7 @@ import { GamificationDock } from './components/organisms/GamificationDock';
 import { BadgeUnlockContainer } from './components/organisms/BadgeUnlockContainer';
 import { useFeatureFlags } from './stores/useFeatureFlags';
 import { api } from './services/api';
+import { analytics } from './lib/analytics';
 
 function AuthGate({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -44,6 +46,14 @@ function AuthGate({ children }: { children: ReactNode }) {
       });
     return () => { cancelled = true; };
   }, [user, setFlags]);
+
+  // Track user_login event (1× por sessão)
+  useEffect(() => {
+    if (!user) return;
+    const uid = (user as any)?.uid || '';
+    const role = (user as any)?.role || 'unknown';
+    analytics.userLogin(uid, role);
+  }, [user]);
 
   if (loading) {
     return (
@@ -85,6 +95,14 @@ export default function App() {
                   element={
                     <Suspense fallback={<div className="p-8 text-center text-sm text-slate-500"><Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-[#F26522]" />Carregando dashboard executivo…</div>}>
                       <DashboardExecutivo />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="loja"
+                  element={
+                    <Suspense fallback={<div className="p-8 text-center text-sm text-slate-500"><Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-[#F26522]" />Carregando loja…</div>}>
+                      <Loja />
                     </Suspense>
                   }
                 />
