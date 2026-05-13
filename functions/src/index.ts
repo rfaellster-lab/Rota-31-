@@ -314,6 +314,47 @@ app.post('/api/admin/backfill-user', verifyFirebaseToken as any, requireAdmin as
 }));
 
 /**
+ * POST /api/admin/feature-flags — admin-only setter pra config/featureFlags/global.
+ * Body: { flags: Partial<FeatureFlags>, panicMode?: boolean }
+ * Faz merge no doc existente.
+ * @story Sprint 3 P3 / Admin flags endpoint
+ */
+app.post('/api/admin/feature-flags', verifyFirebaseToken as any, requireAdmin as any, wrap(async (req: AuthedRequest, res) => {
+  if (!firebaseAdminEnabled) return res.status(503).json({ error: 'Firestore não inicializado' });
+  const { flags, panicMode } = req.body || {};
+  if (!flags || typeof flags !== 'object') {
+    return res.status(400).json({ error: 'body.flags (object) é obrigatório' });
+  }
+  const payload: any = { updatedAt: new Date().toISOString(), updatedBy: req.authUser?.email };
+  // Merge no campo global
+  payload.global = flags;
+  if (typeof panicMode === 'boolean') payload.panicMode = panicMode;
+  await admin.firestore().doc('config/featureFlags').set(payload, { merge: true });
+  // Invalida cache do middleware in-memory
+  flagCache.clear();
+  res.json({ ok: true, applied: payload });
+}));
+
+/**
+ * GET /api/admin/sheet-sample — debug helper pra ver valores de aprovadoPor reais.
+ * @story Sprint 3 P3 / Debug backfill
+ */
+app.get('/api/admin/sheet-sample', verifyFirebaseToken as any, requireAdmin as any, wrap(async (_req: AuthedRequest, res) => {
+  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI500`);
+  const samples: Array<{ status: string; aprovadoPor: string }> = [];
+  const counts: Record<string, number> = {};
+  for (const row of rows) {
+    const inv = adaptToInvoice(row, 0);
+    if (!inv) continue;
+    if (inv.aprovadoPor) {
+      counts[inv.aprovadoPor] = (counts[inv.aprovadoPor] || 0) + 1;
+      if (samples.length < 5) samples.push({ status: inv.status, aprovadoPor: inv.aprovadoPor });
+    }
+  }
+  res.json({ total: rows.length, samples, distinctAprovadoPorCounts: counts });
+}));
+
+/**
  * POST /api/admin/recompute-insights — admin-only trigger manual de computeInsights.
  * Substitui o Cloud Scheduler enquanto SA não tem roles/functions.admin.
  * @story Sprint 2 P2 (workaround IAM)
