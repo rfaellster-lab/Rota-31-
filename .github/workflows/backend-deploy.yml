@@ -40,7 +40,10 @@ jobs:
         run: npm install -g firebase-tools@latest
 
       - name: Deploy Functions
-        run: firebase deploy --only functions --project rota-31---backend --non-interactive --force
+        # --only functions:api evita tentar criar/deletar scheduler functions
+        # que o SA atual nao tem permissao pra gerenciar (precisa roles/functions.admin).
+        # TODO: trocar pra --only functions quando role for adicionado.
+        run: firebase deploy --only functions:api --project rota-31---backend --non-interactive --force
 
       - name: Verify deploy
         run: |
