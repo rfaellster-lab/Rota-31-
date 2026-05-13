@@ -18,6 +18,7 @@ import Login from './pages/Login';
 const DashboardExecutivo = lazy(() => import('./pages/DashboardExecutivo'));
 const Loja = lazy(() => import('./pages/Loja'));
 const Conquistas = lazy(() => import('./pages/Conquistas'));
+const Perfil = lazy(() => import('./pages/Perfil'));
 import { InvoiceProvider } from './store/InvoiceContext';
 import { AuthProvider, useAuth } from './store/AuthContext';
 import { ToastContainer } from './components/organisms/ToastContainer';
@@ -30,6 +31,7 @@ import { useFeatureFlags } from './stores/useFeatureFlags';
 import { api } from './services/api';
 import { analytics } from './lib/analytics';
 import { useStreakLossAversion } from './lib/useStreakLossAversion';
+import { useApplyTheme } from './lib/useApplyTheme';
 
 function AuthGate({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -84,9 +86,15 @@ function AuthGate({ children }: { children: ReactNode }) {
   );
 }
 
+function ThemeApplier() {
+  useApplyTheme();
+  return null;
+}
+
 export default function App() {
   return (
     <AuthProvider>
+      <ThemeApplier />
       <AuthGate>
         <InvoiceProvider>
           <BrowserRouter basename={import.meta.env.BASE_URL}>
@@ -118,6 +126,14 @@ export default function App() {
                   element={
                     <Suspense fallback={<div className="p-8 text-center text-sm text-slate-500"><Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-[#F26522]" />Carregando conquistas…</div>}>
                       <Conquistas />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="perfil"
+                  element={
+                    <Suspense fallback={<div className="p-8 text-center text-sm text-slate-500"><Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-[#F26522]" />Carregando perfil…</div>}>
+                      <Perfil />
                     </Suspense>
                   }
                 />

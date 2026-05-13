@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Calendar as CalendarIcon, History as HistoryIcon, Settings, Bell, Menu, X, CheckSquare, AlertCircle, LogOut, ChevronRight, ChevronLeft, BarChart3, ShoppingBag, TrendingUp, Trophy } from 'lucide-react';
+import { LayoutDashboard, Calendar as CalendarIcon, History as HistoryIcon, Settings, Bell, Menu, X, CheckSquare, AlertCircle, LogOut, ChevronRight, ChevronLeft, BarChart3, ShoppingBag, TrendingUp, Trophy, User as UserIcon } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { useEffect, useMemo, useState } from 'react';
@@ -37,8 +37,9 @@ export default function Layout() {
       { name: 'Calendário', href: '/calendario', icon: CalendarIcon },
       { name: 'Histórico', href: '/historico', icon: HistoryIcon },
     ];
-    // Sprint 3 — Conquistas só com XP_ENABLED
+    // Sprint 3 — Perfil + Conquistas só com XP_ENABLED
     if (xpEnabled) {
+      base.push({ name: 'Perfil', href: '/perfil', icon: UserIcon });
       base.push({ name: 'Conquistas', href: '/conquistas', icon: Trophy });
     }
     // Loja só aparece se XP_ENABLED + STORE_ENABLED
@@ -87,7 +88,7 @@ export default function Layout() {
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
   return (
-    <div className={cn("flex h-screen bg-[#F3F4F6] flex-col md:flex-row overflow-hidden font-sans text-slate-900", dryRun && "pt-6")}>
+    <div className={cn("flex h-screen bg-[#F3F4F6] dark:bg-slate-950 flex-col md:flex-row overflow-hidden font-sans text-slate-900 dark:text-slate-100", dryRun && "pt-6")}>
       {/* Banner DRY_RUN — proteção visual contra emissão acidental */}
       {dryRun && (
         <div className="fixed top-0 left-0 right-0 bg-red-600 text-white text-center py-1 text-[10px] font-bold uppercase tracking-widest z-[999999] border-b-2 border-red-800 shadow-md">
@@ -196,15 +197,15 @@ export default function Layout() {
 
       {/* Header Mobile & Top Bar */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-4 sm:px-8 z-[99999] relative shrink-0 shadow-sm isolate">
+        <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 h-16 flex items-center justify-between px-4 sm:px-8 z-[99999] relative shrink-0 shadow-sm isolate">
            <div className="flex items-center gap-4">
               <div className="flex items-center md:hidden">
                 <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Rota 31" className="w-9 h-9 mr-2 object-contain" />
               </div>
-              <h1 className="text-xl font-bold text-[#1F2937]">Rota 31 Express</h1>
-              <div className="hidden sm:flex items-center gap-2 bg-green-50 px-3 py-1 rounded-full">
+              <h1 className="text-xl font-bold text-[#1F2937] dark:text-slate-100">Rota 31 Express</h1>
+              <div className="hidden sm:flex items-center gap-2 bg-green-50 dark:bg-green-950/40 px-3 py-1 rounded-full">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span className="text-[10px] uppercase tracking-wider font-bold text-green-700">Sistema Online</span>
+                <span className="text-[10px] uppercase tracking-wider font-bold text-green-700 dark:text-green-400">Sistema Online</span>
               </div>
               <div className="hidden lg:block" data-tour="freshness">
                 <FreshnessIndicator
@@ -240,7 +241,7 @@ export default function Layout() {
       </div>
 
       {/* Bottom Nav - Mobile */}
-      <div className="md:hidden bg-white border-t border-slate-200 fixed bottom-0 left-0 right-0 z-50 px-2 pb-4 sm:pb-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+      <div className="md:hidden bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 fixed bottom-0 left-0 right-0 z-50 px-2 pb-4 sm:pb-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
         <div className="flex justify-around py-2">
            {navigation.map((item) => {
              const isActive = location.pathname === item.href;

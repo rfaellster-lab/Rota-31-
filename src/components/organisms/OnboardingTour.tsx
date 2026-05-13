@@ -18,7 +18,7 @@ const JoyrideAny = Joyride as unknown as FC<Record<string, unknown>>;
 
 type JoyrideStatus = (typeof STATUS)[keyof typeof STATUS];
 
-const TOUR_VERSION = 'sprint-1-2026-05';
+const TOUR_VERSION = 'sprint-3-2026-05';
 const STORAGE_KEY = `rota31:onboarding:${TOUR_VERSION}`;
 
 const STEPS: Step[] = [
@@ -49,6 +49,13 @@ const STEPS: Step[] = [
     content:
       'Aperte / pra focar a busca. J/K pra navegar a lista. A pra aprovar, N pra negar. Shift+? mostra todos.',
     placement: 'bottom',
+  },
+  {
+    target: 'body',
+    placement: 'center',
+    title: 'XP e Conquistas',
+    content:
+      'A cada nota aprovada você ganha XP, sobe de nível e desbloqueia selos. Veja seu progresso no canto inferior direito ou em "Perfil" e "Conquistas" no menu.',
   },
   {
     target: 'body',

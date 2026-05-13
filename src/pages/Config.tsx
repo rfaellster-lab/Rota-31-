@@ -5,11 +5,12 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Webhook, MessageSquare, ShieldAlert, RefreshCw, Plus, Trash2, Activity, AlertTriangle, Lock, Users, Crown, UserX, UserCheck, ExternalLink } from 'lucide-react';
+import { Webhook, MessageSquare, ShieldAlert, RefreshCw, Plus, Trash2, Activity, AlertTriangle, Lock, Users, Crown, UserX, UserCheck, ExternalLink, Sun, Moon, Monitor } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../store/AuthContext';
 import PromoSlot from '../components/PromoSlot';
 import { useToast } from '../stores/useToastStore';
+import { useUiStore, type Theme } from '../stores/useUiStore';
 
 interface Rule { row: number; tipoBusca: string; valorBusca: string; nomeCliente: string; valorMinimo: string; porcentagem: string; observacoes: string; }
 interface HealthStatus { n8n?: any; sheets?: any; bsoft?: any; firestore?: any; dryRun?: boolean; }
@@ -24,6 +25,8 @@ export default function Config() {
   const { isAdmin } = useAuth();
   const toast = useToast();
   const [tab, setTab] = useState<Tab>('operacional');
+  const theme = useUiStore((s) => s.theme);
+  const setTheme = useUiStore((s) => s.setTheme);
 
   const [rules, setRules] = useState<Rule[]>([]);
   const [loadingRules, setLoadingRules] = useState(true);
@@ -139,6 +142,38 @@ export default function Config() {
               <StatusCard label="Planilha Google" ok={health?.sheets?.ok} />
               <StatusCard label="Sistema BSOFT" ok={health?.bsoft?.ok} detail={health?.bsoft?.detail} />
               <StatusCard label="Banco Firebase" ok={health?.firestore?.ok} detail={health?.firestore?.ok ? 'Pronto para auditoria' : 'Credencial pendente'} />
+            </div>
+          </div>
+
+          {/* Preferências — tema (dark mode) */}
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700">
+            <h3 className="text-base font-bold text-gray-900 dark:text-slate-100 mb-3 flex items-center">
+              <Sun className="w-4 h-4 mr-2 text-amber-500" /> Aparência
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">
+              Escolha o tema visual. "Sistema" segue a preferência do seu navegador/SO.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {([
+                { id: 'light' as Theme, label: 'Claro', Icon: Sun },
+                { id: 'dark' as Theme, label: 'Escuro', Icon: Moon },
+                { id: 'system' as Theme, label: 'Sistema', Icon: Monitor },
+              ]).map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => { setTheme(id); toast.success(`Tema "${label}" aplicado`); }}
+                  aria-pressed={theme === id}
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                    theme === id
+                      ? 'bg-[#F26522] text-white border-[#F26522]'
+                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" aria-hidden />
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
 
