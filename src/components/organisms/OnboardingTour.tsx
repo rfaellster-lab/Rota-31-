@@ -76,13 +76,27 @@ export const OnboardingTour: FC = () => {
     const dismissed = localStorage.getItem(STORAGE_KEY) === 'done';
     if (dismissed) return;
     // Pequeno delay pra DOM estabilizar (selectors precisam estar mounted)
-    const t = setTimeout(() => setRun(true), 800);
+    const t = setTimeout(() => {
+      setRun(true);
+      // Marca como visto NO MOMENTO QUE APARECE — mesmo que user feche com X,
+      // Esc, ou clique fora, não volta a aparecer. Previne spam de tour.
+      try {
+        localStorage.setItem(STORAGE_KEY, 'done');
+      } catch {}
+    }, 800);
     return () => clearTimeout(t);
   }, [tourFlagEnabled]);
 
-  const handleCallback = (data: { status: JoyrideStatus }) => {
-    const { status } = data;
-    if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
+  const handleCallback = (data: { status: JoyrideStatus; action?: string; type?: string }) => {
+    const { status, action, type } = data;
+    // Fecha em qualquer evento terminal — robustez vs tour spam
+    const isTerminal =
+      status === STATUS.FINISHED ||
+      status === STATUS.SKIPPED ||
+      action === 'close' ||
+      action === 'reset' ||
+      type === 'tour:end';
+    if (isTerminal) {
       try {
         localStorage.setItem(STORAGE_KEY, 'done');
       } catch {}
