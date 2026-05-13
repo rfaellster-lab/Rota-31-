@@ -32,6 +32,8 @@ import { creditXp } from './services/gamification/userProfile.js';
 import { createMeRouter } from './routes/me.js';
 import { createInsightsRouter } from './routes/insights.js';
 import { createExecutiveRouter } from './routes/executive.js';
+import { computeInsights as computeInsightsPure } from './services/insights/computeInsights.js';
+import { persistInsights } from './services/insights/persistInsights.js';
 
 // ─── Config ──────────────────────────────────────────────────
 const PORT = Number(process.env.PORT) || 3001;
@@ -268,6 +270,43 @@ app.use('/api/executive', createExecutiveRouter({
     }
     return out;
   },
+}));
+
+/**
+ * POST /api/admin/recompute-insights — admin-only trigger manual de computeInsights.
+ * Substitui o Cloud Scheduler enquanto SA não tem roles/functions.admin.
+ * @story Sprint 2 P2 (workaround IAM)
+ */
+app.post('/api/admin/recompute-insights', verifyFirebaseToken as any, requireAdmin as any, wrap(async (_req: AuthedRequest, res) => {
+  if (!firebaseAdminEnabled) {
+    return res.status(503).json({ error: 'Firestore não inicializado' });
+  }
+  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI5000`);
+  const invoices: any[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const inv = adaptToInvoice(rows[i], i + 2);
+    if (!inv) continue;
+    invoices.push({
+      status: inv.status,
+      detectadoEm: inv.detectadoEm,
+      aprovadoEm: inv.aprovadoEm || undefined,
+      valorFrete: inv.valorFrete,
+      erroMsg: inv.erroMsg,
+      pagador: (inv as any).pagador,
+      tipoRegra: (inv as any).tipoRegra,
+    });
+  }
+  const now = Date.now();
+  const ms30d = 30 * 24 * 3600 * 1000;
+  const current30d = invoices.filter((i) => i.detectadoEm && now - Date.parse(i.detectadoEm) < ms30d);
+  const prev30d = invoices.filter((i) => {
+    if (!i.detectadoEm) return false;
+    const t = Date.parse(i.detectadoEm);
+    return now - t >= ms30d && now - t < 2 * ms30d;
+  });
+  const insights = computeInsightsPure(current30d, prev30d.length);
+  const persisted = await persistInsights(insights);
+  res.json({ ok: true, computed: insights.length, written: persisted.written });
 }));
 
 /** GET /api/notifications — notificacoes in-app */
@@ -739,5 +778,8 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 // Export Function HTTP — invoker public (frontend chama direto). API key + Bearer protegem internamente.
 export const api = onRequest({ cors: false, timeoutSeconds: 60, memory: '512MiB', invoker: 'public' }, app);
 
-// Sprint 2 P2 — Cloud Scheduler que roda computeInsights a cada 6h
-export { computeInsightsScheduled } from './scheduled/computeInsights.js';
+// Sprint 2 P2 — Cloud Scheduler nativo desabilitado temporariamente:
+// SA precisa de role `Cloud Functions Admin` (além de Editor) pra criar function
+// nova com IAM policy. Por enquanto, recompute via POST /api/admin/recompute-insights.
+// TODO: re-habilitar quando role for adicionado.
+// export { computeInsightsScheduled } from './scheduled/computeInsights.js';
