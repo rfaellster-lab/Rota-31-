@@ -46,12 +46,13 @@ export interface CountsFromSheets {
 }
 
 /**
- * Aplica backfill pro user, idempotente.
+ * Aplica backfill pro user, idempotente (a não ser que force=true).
  * countsFromSheets é injetado — caller calcula via Sheets API.
  */
 export async function backfillUser(
   uid: string,
   countsFromSheets: CountsFromSheets,
+  options?: { force?: boolean },
 ): Promise<BackfillSummary> {
   const gamRef = db().doc(`gamification/${uid}`);
   const profileRef = db().doc(`userProfiles/${uid}`);
@@ -61,7 +62,7 @@ export async function backfillUser(
     const gamSnap = await tx.get(gamRef);
 
     const profile = profileSnap.exists ? profileSnap.data() : null;
-    if (profile?.backfilledAt) {
+    if (profile?.backfilledAt && !options?.force) {
       const gam = gamSnap.data() as GamificationState | undefined;
       return {
         uid,

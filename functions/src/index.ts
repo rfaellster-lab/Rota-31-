@@ -305,11 +305,12 @@ app.post('/api/admin/backfill-user', verifyFirebaseToken as any, requireAdmin as
     else if (inv.status === 'negada' || inv.status === 'denegada') denied++;
     else if (inv.status === 'cancelada') cancelled++;
   }
+  const force = req.body?.force === true;
   const summary = await backfillUser(targetUid, {
     invoice_approved: approved,
     invoice_denied: denied,
     invoice_cancelled: cancelled,
-  });
+  }, { force });
   res.json({ ok: true, summary, foundInSheets: { approved, denied, cancelled } });
 }));
 
