@@ -57,6 +57,7 @@ const Loja: FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [redeeming, setRedeeming] = useState<string | null>(null);
   const [purchasedIds, setPurchasedIds] = useState<Set<string>>(new Set());
+  const [kindFilter, setKindFilter] = useState<'all' | 'cosmetic' | 'boost' | 'badge' | 'mystery'>('all');
 
   const load = async () => {
     setLoading(true);
@@ -187,8 +188,39 @@ const Loja: FC = () => {
         </div>
       </header>
 
+      {/* Filtro por kind */}
+      <div className="flex flex-wrap items-center gap-2">
+        {([
+          { id: 'all', label: 'Todas', count: items.length },
+          { id: 'cosmetic', label: '🎨 Visuais', count: items.filter((i) => i.kind === 'cosmetic').length },
+          { id: 'boost', label: '⚡ Boosts', count: items.filter((i) => i.kind === 'boost').length },
+          { id: 'badge', label: '⭐ Selos', count: items.filter((i) => i.kind === 'badge').length },
+          { id: 'mystery', label: '🎁 Mistério', count: items.filter((i) => i.kind === 'mystery').length },
+        ] as const).map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            onClick={() => setKindFilter(f.id as any)}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+              kindFilter === f.id
+                ? 'bg-slate-900 text-white'
+                : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            {f.label}
+            <span className={`rounded-full px-1.5 text-[10px] font-bold ${
+              kindFilter === f.id ? 'bg-white/20' : 'bg-slate-100'
+            }`}>
+              {f.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
       <section className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-        {items.map((item) => {
+        {items
+          .filter((item) => kindFilter === 'all' || item.kind === kindFilter)
+          .map((item) => {
           const rs = RARITY_STYLES[item.rarity];
           const owned = purchasedIds.has(item.id);
           const canAfford = totalXP >= item.costXP;

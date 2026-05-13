@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Calendar as CalendarIcon, History as HistoryIcon, Settings, Bell, Menu, X, CheckSquare, AlertCircle, LogOut, ChevronRight, ChevronLeft, BarChart3, ShoppingBag, TrendingUp } from 'lucide-react';
+import { LayoutDashboard, Calendar as CalendarIcon, History as HistoryIcon, Settings, Bell, Menu, X, CheckSquare, AlertCircle, LogOut, ChevronRight, ChevronLeft, BarChart3, ShoppingBag, TrendingUp, Trophy } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { useEffect, useMemo, useState } from 'react';
@@ -37,7 +37,11 @@ export default function Layout() {
       { name: 'Calendário', href: '/calendario', icon: CalendarIcon },
       { name: 'Histórico', href: '/historico', icon: HistoryIcon },
     ];
-    // Sprint 3 — Loja só aparece se XP_ENABLED + STORE_ENABLED
+    // Sprint 3 — Conquistas só com XP_ENABLED
+    if (xpEnabled) {
+      base.push({ name: 'Conquistas', href: '/conquistas', icon: Trophy });
+    }
+    // Loja só aparece se XP_ENABLED + STORE_ENABLED
     if (xpEnabled && storeEnabled) {
       base.push({ name: 'Loja', href: '/loja', icon: ShoppingBag });
     }

@@ -11,6 +11,7 @@ import { api } from '../services/api';
 import { useToastStore } from '../stores/useToastStore';
 import { useGamificationStore } from '../stores/useGamificationStore';
 import { useBadgeUnlockStore } from '../stores/useBadgeUnlockStore';
+import { useConfettiStore } from '../stores/useConfettiStore';
 import { analytics } from '../lib/analytics';
 import { notifyComboBump } from '../lib/useComboTracker';
 
@@ -164,16 +165,21 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
         if (r.xp.leveledUp) {
           toast.success(`Nível ${r.xp.level} desbloqueado!`, { title: '🎯 Level up' });
           analytics.levelUp({ newLevel: r.xp.level, totalXP: r.xp.newTotalXP });
+          useConfettiStore.getState().trigger(2500); // Confetti no level up
         } else if (r.xp.rankedUp) {
           toast.success(`Você é ${r.xp.rank} agora`, { title: '⭐ Rank up' });
           analytics.rankUp({ newRank: r.xp.rank, level: r.xp.level });
+          useConfettiStore.getState().trigger(3500); // Confetti maior no rank up
         } else if (r.xp.isRare) {
           toast.success(`Sorte: ${r.xp.reason} (+${r.xp.gained} XP)`, { title: '✨ Bônus raro' });
         }
-        // Achievements novos → fila de BadgeUnlockToast
+        // Achievements novos → fila de BadgeUnlockToast (+ confetti se legendary)
         if (Array.isArray(r.xp.newAchievements) && r.xp.newAchievements.length > 0) {
           useBadgeUnlockStore.getState().push(r.xp.newAchievements);
-          r.xp.newAchievements.forEach((b: any) => analytics.achievementUnlocked({ id: b.id, rarity: b.rarity }));
+          r.xp.newAchievements.forEach((b: any) => {
+            analytics.achievementUnlocked({ id: b.id, rarity: b.rarity });
+            if (b.rarity === 'legendary') useConfettiStore.getState().trigger(4000);
+          });
         }
       }
     } catch (e: any) {
