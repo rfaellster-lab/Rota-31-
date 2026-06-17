@@ -265,7 +265,7 @@ app.use('/api/insights', createInsightsRouter(firebaseAdminEnabled));
 app.use('/api/store', createStoreRouter(firebaseAdminEnabled));
 app.use('/api/executive', createExecutiveRouter({
   fetchAllInvoices: async () => {
-    const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI5000`);
+    const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI`);
     const out: any[] = [];
     for (let i = 0; i < rows.length; i++) {
       const inv = adaptToInvoice(rows[i], i + 2);
@@ -288,7 +288,7 @@ app.post('/api/admin/backfill-user', verifyFirebaseToken as any, requireAdmin as
     return res.status(400).json({ error: 'targetUid + targetEmail são obrigatórios' });
   }
   // Conta no Sheets (campo aprovadoPor — pode ser nome OU email)
-  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI5000`);
+  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI`);
   let approved = 0;
   let denied = 0;
   let cancelled = 0;
@@ -341,7 +341,7 @@ app.post('/api/admin/feature-flags', verifyFirebaseToken as any, requireAdmin as
  * @story Sprint 3 P3 / Debug backfill
  */
 app.get('/api/admin/sheet-sample', verifyFirebaseToken as any, requireAdmin as any, wrap(async (_req: AuthedRequest, res) => {
-  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI500`);
+  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI`);
   const samples: Array<{ status: string; aprovadoPor: string }> = [];
   const counts: Record<string, number> = {};
   for (const row of rows) {
@@ -364,7 +364,7 @@ app.post('/api/admin/recompute-insights', verifyFirebaseToken as any, requireAdm
   if (!firebaseAdminEnabled) {
     return res.status(503).json({ error: 'Firestore não inicializado' });
   }
-  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI5000`);
+  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI`);
   const invoices: any[] = [];
   for (let i = 0; i < rows.length; i++) {
     const inv = adaptToInvoice(rows[i], i + 2);
@@ -539,7 +539,7 @@ app.get('/api/health', wrap(async (_req, res) => {
  *    offset        — offset para paginação server-side (default 0)
  */
 app.get('/api/invoices', wrap(async (req, res) => {
-  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI5000`);
+  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI`);
   let invoices = rows
     .map((row, idx) => adaptToInvoice(row, idx + 2))
     .filter((inv): inv is NonNullable<typeof inv> => inv !== null);
@@ -617,7 +617,7 @@ app.patch('/api/invoices/:chave/snooze', wrap(async (req: AuthedRequest, res) =>
 
 /** GET /api/invoices/:chave — detalhe de uma nota */
 app.get('/api/invoices/:chave', wrap(async (req, res) => {
-  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI5000`);
+  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI`);
   for (let i = 0; i < rows.length; i++) {
     if (rows[i][0] === req.params.chave) {
       const inv = adaptToInvoice(rows[i], i + 2);
@@ -744,7 +744,7 @@ app.post('/api/invoices/:chave/cancel', wrap(async (req: AuthedRequest, res) => 
   }
 
   // Localizar a linha no Sheet
-  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI5000`);
+  const rows = await sheetsRead(`${TAB_PENDENTES}!A2:AI`);
   let rowNumber = -1;
   for (let i = 0; i < rows.length; i++) {
     if (rows[i][0] === chave) { rowNumber = i + 2; break; }
