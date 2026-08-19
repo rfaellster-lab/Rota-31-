@@ -1,0 +1,77 @@
+name: Arquivar planilha Rota 31
+
+# Mantém APROVACOES_PENDENTES enxuta: move o que passou da janela de retenção
+# para APROVACOES_ARQUIVO. Evita estourar o grid do Sheets (incidente 17/06 e 19/08).
+#
+# Seguro: o n8n casa tudo por CHAVE (append + update por matchingColumns),
+# nunca por número de linha. Deletar linhas antigas não afeta o pipeline.
+
+on:
+  schedule:
+    # dia 1 de cada mês, 06:00 UTC = 03:00 BRT (madrugada, fora da operação)
+    - cron: '0 6 1 * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Só simular (não altera a planilha)'
+        type: boolean
+        default: true
+      retain_days:
+        description: 'Dias de retenção (mantém tudo mais novo que isso)'
+        type: string
+        default: '60'
+
+concurrency:
+  group: archive-sheet
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar dependência
+        run: npm install google-auth-library --no-save --no-audit --no-fund
+
+      - name: Simular (relatório sempre visível no log)
+        env:
+          GOOGLE_SHEETS_SA: ${{ secrets.GOOGLE_SHEETS_SA }}
+          RETAIN_DAYS: ${{ inputs.retain_days || '60' }}
+        run: node tools/archive-sheet.cjs
+
+      - name: Executar arquivamento
+        # roda no agendamento mensal, ou no disparo manual quando dry_run=false
+        if: github.event_name == 'schedule' || inputs.dry_run == false
+        env:
+          GOOGLE_SHEETS_SA: ${{ secrets.GOOGLE_SHEETS_SA }}
+          RETAIN_DAYS: ${{ inputs.retain_days || '60' }}
+          BACKUP_DIR: backups
+        run: node tools/archive-sheet.cjs --apply
+
+      - name: Guardar backup como artefato
+        if: always() && hashFiles('backups/*.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-pre-archive-${{ github.run_id }}
+          path: backups/*.json
+          retention-days: 90
+          compression-level: 9
+
+      - name: Resumo
+        if: always()
+        run: |
+          echo "### Arquivamento da planilha Rota 31" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Disparo: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Retenção: ${{ inputs.retain_days || '60' }} dias" >> $GITHUB_STEP_SUMMARY
+          if [ -d backups ] && [ -n "$(ls -A backups 2>/dev/null)" ]; then
+            echo "- Backup gerado e anexado como artefato (90 dias)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Sem backup (rodou só em modo simulação)" >> $GITHUB_STEP_SUMMARY
+          fi

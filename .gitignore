@@ -36,6 +36,7 @@ firestore-debug.log
 ui-debug.log
 
 # Backups locais (não commitar — geralmente grandes)
+backups/
 n8n-backups/
 frontend-backups/
 functions-backups/
