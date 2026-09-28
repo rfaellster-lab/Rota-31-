@@ -8,6 +8,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { Invoice } from '../types';
 import { DateRange } from '../components/DateRangePicker';
 import { api } from '../services/api';
+import { iniciaIntervaloVisivel } from '../lib/intervaloVisivel';
 import { useToastStore } from '../stores/useToastStore';
 import { useGamificationStore } from '../stores/useGamificationStore';
 import { useBadgeUnlockStore } from '../stores/useBadgeUnlockStore';
@@ -118,12 +119,9 @@ export const InvoiceProvider = ({ children }: { children: ReactNode }) => {
     api.health().then(h => setDryRun(!!h.dryRun)).catch(() => {});
   }, []);
 
-  // Fetch inicial + auto-refresh
-  useEffect(() => {
-    refresh();
-    const id = setInterval(refresh, REFRESH_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, []);
+  // Fetch inicial + auto-refresh só com a aba visível (volta pra aba = atualiza na hora).
+  // 2026-09-28: em segundo plano o painel seguia buscando a lista inteira (~2 MB) a cada minuto.
+  useEffect(() => iniciaIntervaloVisivel(() => { void refresh(); }, REFRESH_INTERVAL_MS), []);
 
   // ── Mutações otimistas: atualiza UI imediato + chama backend ─
 

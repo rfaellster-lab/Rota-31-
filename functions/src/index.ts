@@ -10,6 +10,7 @@
 
 // Firebase Functions wrapper — variáveis vêm de runtime config / env vars do deploy
 import express, { Request, Response, NextFunction } from 'express';
+import compression from 'compression';
 import { GoogleAuth } from 'google-auth-library';
 import admin from 'firebase-admin';
 import { onRequest } from 'firebase-functions/v2/https';
@@ -217,6 +218,9 @@ async function sheetsUpdate(range: string, values: any[][]): Promise<any> {
 
 // ─── Express ─────────────────────────────────────────────────
 const app = express();
+// gzip/brotli nas respostas (2026-09-28): GET /api/invoices devolve ~2 MB de JSON a cada 60 s por aba
+// aberta; comprimido, a lista de notas cai ~17x.
+app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 
 // CORS: local por padrao, producao via CORS_ALLOWED_ORIGINS

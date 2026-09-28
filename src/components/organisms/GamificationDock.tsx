@@ -16,6 +16,7 @@ import { useEffect, useState, type FC } from 'react';
 import { Trophy, Sparkles } from 'lucide-react';
 import { useGamificationStore, type Rank as StoreRank } from '../../stores/useGamificationStore';
 import { useFeatureFlags } from '../../stores/useFeatureFlags';
+import { iniciaIntervaloVisivel } from '../../lib/intervaloVisivel';
 import { CountUp } from '../atoms/CountUp';
 import { XPBar } from '../atoms/XPBar';
 import { RankBadge, type Rank } from '../atoms/RankBadge';
@@ -78,7 +79,7 @@ export const GamificationDock: FC = () => {
   const [currentLevelXp, setCurrentLevelXp] = useState(0);
   const [nextLevelXp, setNextLevelXp] = useState(100);
 
-  // Initial fetch + polling leve a cada 30s
+  // Initial fetch + polling leve a cada 30s, só com a aba visível (2026-09-28)
   useEffect(() => {
     if (!xpFlagEnabled) return;
     let cancelled = false;
@@ -97,9 +98,8 @@ export const GamificationDock: FC = () => {
       setNextLevelXp(data.nextLevelXp);
     };
 
-    void load();
-    const id = setInterval(() => void load(), POLL_INTERVAL_MS);
-    return () => { cancelled = true; clearInterval(id); };
+    const parar = iniciaIntervaloVisivel(() => void load(), POLL_INTERVAL_MS);
+    return () => { cancelled = true; parar(); };
   }, [xpFlagEnabled, hydrate]);
 
   if (!xpFlagEnabled || !loaded) return null;

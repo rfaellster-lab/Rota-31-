@@ -2,7 +2,9 @@
  * @file BackendStatusBanner.tsx
  * @description Banner vermelho no topo se backend não responde (canary check).
  *              Prevê classe de bug "bundle quebrado → 404 silencioso → UI vazia".
- *              Faz hit em /api/health no mount e a cada 60s.
+ *              Faz hit em /api/health no mount e a cada 5 min, só com a aba visível (era 60 s:
+ *              o health testa BSOFT + Firestore e levava 2,6 s em média — medido em 28/09/2026).
+ *              A busca de notas (60 s) continua avisando falha na hora, pelo toast do InvoiceContext.
  * @story Sprint 1 / fix-2026-05-12 (prevenção painel cego)
  * @agent @dev
  * @created 2026-05-12
@@ -10,10 +12,11 @@
 import { useEffect, useState, type FC } from 'react';
 import { AlertOctagon, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
+import { iniciaIntervaloVisivel } from '../../lib/intervaloVisivel';
 
 type Status = 'checking' | 'ok' | 'fail';
 
-const CHECK_INTERVAL_MS = 60_000;
+const CHECK_INTERVAL_MS = 5 * 60_000;
 
 export const BackendStatusBanner: FC = () => {
   const [status, setStatus] = useState<Status>('checking');
@@ -49,11 +52,7 @@ export const BackendStatusBanner: FC = () => {
     }
   };
 
-  useEffect(() => {
-    void check();
-    const id = setInterval(() => void check(), CHECK_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, []);
+  useEffect(() => iniciaIntervaloVisivel(() => void check(), CHECK_INTERVAL_MS), []);
 
   if (status !== 'fail') return null;
 
